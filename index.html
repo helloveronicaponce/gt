@@ -770,12 +770,51 @@ function MainApp({user}) {
   const [goal,setGoal]=useState('hipertrofia')
 
   useEffect(()=>{
-    Promise.all([DB.plans(user.id), DB.profile(user.id)]).then(([pl,prof])=>{
-      if(pl.length) setPlans(pl)
-      if(prof?.weight_kg) setWeight(prof.weight_kg)
-      if(prof?.goal) setGoal(prof.goal)
-      setLoading(false)
-    }).catch(()=>setLoading(false))
+    (async () => {
+      try {
+        const [pl, prof] = await Promise.all([DB.plans(user.id), DB.profile(user.id)])
+        let finalPlans = pl
+
+        if (pl.length === 0) {
+          // Novo usuário: semeia os treinos padrão direto no banco
+          // (antes eles ficavam só em memória e sumiam quando você criava qualquer treino)
+          const seeded = []
+          for (const def of DEFAULT_PLANS) {
+            try {
+              const saved = await DB.save({...def, _db:false, id:null}, user.id)
+              seeded.push(saved)
+            } catch (e) { console.warn('Falha ao semear', def.name, e) }
+          }
+          finalPlans = seeded.length ? seeded : DEFAULT_PLANS
+        } else {
+          // Recuperação one-time: se A ou B estão faltando por causa do bug antigo,
+          // reinsere só uma vez por usuário (flag no localStorage).
+          const recoveryKey = `gt_recovered_defaults_v1_${user.id}`
+          if (!localStorage.getItem(recoveryKey)) {
+            const existingNames = new Set(pl.map(p => p.name))
+            const restored = [...pl]
+            for (const def of DEFAULT_PLANS) {
+              if (!existingNames.has(def.name)) {
+                try {
+                  const saved = await DB.save({...def, _db:false, id:null}, user.id)
+                  restored.push(saved)
+                } catch (e) { console.warn('Falha ao restaurar', def.name, e) }
+              }
+            }
+            finalPlans = restored
+            localStorage.setItem(recoveryKey, new Date().toISOString())
+          }
+        }
+
+        setPlans(finalPlans)
+        if (prof?.weight_kg) setWeight(prof.weight_kg)
+        if (prof?.goal) setGoal(prof.goal)
+      } catch (e) {
+        console.error('Erro ao carregar:', e)
+      } finally {
+        setLoading(false)
+      }
+    })()
   },[user.id])
 
   const saveProfile=useCallback((u)=>DB.saveProfile(user.id,u).catch(()=>{}),[user.id])

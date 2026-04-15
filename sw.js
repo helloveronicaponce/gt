@@ -1,6 +1,6 @@
 // Service Worker — Gym Tracker PWA
 // Usa caminhos relativos ao scope do SW (funciona em GitHub Pages em subpasta).
-const CACHE = 'gym-v2'
+const CACHE = 'gym-v3'
 const ASSETS = [
   './',
   './index.html',

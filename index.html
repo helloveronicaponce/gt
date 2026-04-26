@@ -38,11 +38,48 @@
       --black-12:  rgba(15,15,15,0.12);
       --off-92:    rgba(255,252,244,0.92);
 
-      --bg:        var(--off-white);
-      --fg:        var(--black);
-      --fg-muted:  var(--black-60);
-      --rule:      var(--black-12);
-      --accent:    var(--pink);
+      /* ── Light mode (default) ── */
+      --bg:          #FFFCF4;
+      --bg-card:     #FFFCF4;
+      --bg-inset:    rgba(15,15,15,0.04);
+      --fg:          #0F0F0F;
+      --fg-muted:    rgba(15,15,15,0.55);
+      --rule:        rgba(15,15,15,0.10);
+      --rule-strong: rgba(15,15,15,0.20);
+      --accent:      var(--pink);
+      --shadow-card: 0 2px 12px rgba(15,15,15,0.07);
+      --btn-primary-bg: #0F0F0F;
+      --btn-primary-fg: #FFFCF4;
+    }
+
+    /* ── Dark mode ── */
+    html.dark {
+      --bg:          #0F0F0F;
+      --bg-card:     #1C1C1C;
+      --bg-inset:    rgba(255,252,244,0.06);
+      --fg:          #FFFCF4;
+      --fg-muted:    rgba(255,252,244,0.45);
+      --rule:        rgba(255,252,244,0.10);
+      --rule-strong: rgba(255,252,244,0.18);
+      --shadow-card: 0 2px 12px rgba(0,0,0,0.40);
+      --btn-primary-bg: #FFFCF4;
+      --btn-primary-fg: #0F0F0F;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not(.light) {
+        --bg:          #0F0F0F;
+        --bg-card:     #1C1C1C;
+        --bg-inset:    rgba(255,252,244,0.06);
+        --fg:          #FFFCF4;
+        --fg-muted:    rgba(255,252,244,0.45);
+        --rule:        rgba(255,252,244,0.10);
+        --rule-strong: rgba(255,252,244,0.18);
+        --shadow-card: 0 2px 12px rgba(0,0,0,0.40);
+        --btn-primary-bg: #FFFCF4;
+        --btn-primary-fg: #0F0F0F;
+      }
+    }
 
       --font-display: 'Inter', system-ui, sans-serif;
       --font-italic:  'EB Garamond', Georgia, serif;
@@ -97,7 +134,7 @@
     button{font-family:var(--font-body);cursor:pointer;border:none;background:none}
     input{font-family:var(--font-body);outline:none}
     ::-webkit-scrollbar{width:3px}
-    ::-webkit-scrollbar-thumb{background:var(--black-12);border-radius:3px}
+    ::-webkit-scrollbar-thumb{background:var(--rule);border-radius:3px}
 
     @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
     @keyframes slideUp{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
@@ -111,10 +148,10 @@
 
     /* ── Card base ── */
     .card{
-      background:var(--off-white);
-      border:1.5px solid var(--black-12);
+      background:var(--bg-card);
+      border:1.5px solid var(--rule);
       border-radius:var(--r-lg);
-      box-shadow:var(--shadow-2);
+      box-shadow:var(--shadow-card);
     }
     .card-black{background:var(--black);color:var(--off-white);border-color:var(--black)}
     .card-pink {background:var(--pink); color:var(--off-white);border-color:var(--pink)}
@@ -133,18 +170,18 @@
     .capsule-pink{background:var(--pink);color:var(--black)}
     .capsule-lime{background:var(--lime);color:var(--black)}
 
-    /* ── Primary button (preto, full-width) ── */
+    /* ── Primary button ── */
     .btn-primary{
       width:100%;padding:14px;
       font-family:var(--font-body);font-size:var(--t-sm);font-weight:900;
       letter-spacing:var(--track-cap);text-transform:uppercase;
-      background:var(--black);color:var(--off-white);
+      background:var(--btn-primary-bg);color:var(--btn-primary-fg);
       border-radius:var(--r-md);
       display:flex;align-items:center;justify-content:center;gap:8px;
-      box-shadow:var(--shadow-2);
+      box-shadow:var(--shadow-card);
       transition:transform var(--dur) var(--ease),opacity var(--dur) var(--ease);
     }
-    .btn-primary:disabled{background:var(--black-40);box-shadow:none;cursor:not-allowed}
+    .btn-primary:disabled{background:var(--rule-strong);color:var(--fg-muted);box-shadow:none;cursor:not-allowed}
     .btn-primary:not(:disabled):active{transform:scale(.97)}
 
     /* Variante lima */
@@ -156,56 +193,56 @@
       width:100%;padding:13px;
       font-family:var(--font-body);font-size:var(--t-sm);font-weight:700;
       color:var(--fg);background:transparent;
-      border:1.5px solid var(--black-40);border-radius:var(--r-md);
+      border:1.5px solid var(--rule-strong);border-radius:var(--r-md);
       display:flex;align-items:center;justify-content:center;gap:8px;
       transition:all var(--dur) var(--ease);
     }
-    .btn-ghost:hover{border-color:var(--black);background:var(--black);color:var(--off-white)}
+    .btn-ghost:hover{border-color:var(--fg);background:var(--fg);color:var(--bg)}
 
     /* ── Icon button ── */
     .btn-icon{
       width:40px;height:40px;border-radius:var(--r-sm);
       display:flex;align-items:center;justify-content:center;
-      border:1.5px solid var(--black-12);background:var(--off-white);
-      color:var(--black-60);font-size:15px;
+      border:1.5px solid var(--rule);background:var(--bg-card);
+      color:var(--fg-muted);font-size:15px;
       transition:all var(--dur) var(--ease);
     }
-    .btn-icon:hover{border-color:var(--black);color:var(--fg)}
-    .btn-icon.danger:hover{background:#FEF2F2;border-color:#FCA5A5;color:#DC2626}
-    .btn-icon.active{background:var(--black);border-color:var(--black);color:var(--off-white)}
+    .btn-icon:hover{border-color:var(--fg);color:var(--fg)}
+    .btn-icon.danger:hover{background:rgba(220,38,38,0.10);border-color:#FCA5A5;color:#DC2626}
+    .btn-icon.active{background:var(--fg);border-color:var(--fg);color:var(--bg)}
 
     /* ── Pill filter ── */
     .pill{
       padding:7px 14px;border-radius:var(--r-pill);font-size:var(--t-xs);font-weight:700;
-      white-space:nowrap;border:1.5px solid var(--black-12);
-      background:var(--off-white);color:var(--black-60);
+      white-space:nowrap;border:1.5px solid var(--rule);
+      background:var(--bg-card);color:var(--fg-muted);
       transition:all var(--dur) var(--ease);
     }
-    .pill.active{background:var(--black);color:var(--off-white);border-color:var(--black)}
+    .pill.active{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 
     /* ── Tab bar ── */
     .tab-bar{
-      display:flex;background:var(--off-white);
+      display:flex;background:var(--bg-card);
       border-radius:var(--r-md);padding:4px;
-      border:1.5px solid var(--black-12);box-shadow:var(--shadow-1);
+      border:1.5px solid var(--rule);box-shadow:var(--shadow-card);
     }
     .tab-btn{
       flex:1;padding:9px 4px;border-radius:var(--r-sm);
       font-weight:700;font-size:10px;letter-spacing:.03em;text-transform:uppercase;
-      color:var(--black-60);transition:all var(--dur) var(--ease);
+      color:var(--fg-muted);transition:all var(--dur) var(--ease);
     }
-    .tab-btn.active{background:var(--black);color:var(--off-white);box-shadow:var(--shadow-1)}
+    .tab-btn.active{background:var(--fg);color:var(--bg);box-shadow:var(--shadow-card)}
 
     /* ── Inputs ── */
     .input-field{
       width:100%;padding:13px 14px;font-size:var(--t-body);
-      background:var(--off-white);border:1.5px solid var(--black-12);
+      background:var(--bg-inset);border:1.5px solid var(--rule);
       border-radius:var(--r-md);color:var(--fg);
       transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease);
     }
     .input-field:focus{
-      border-color:var(--black);
-      box-shadow:0 0 0 3px var(--black-12);
+      border-color:var(--fg);
+      box-shadow:0 0 0 3px var(--rule);
     }
 
     /* ── Muscle tag chip ── */
@@ -221,6 +258,32 @@
 
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback, useMemo } = React
+
+// ═══════════════════════════════════════════════════════════
+// DARK MODE
+// ═══════════════════════════════════════════════════════════
+function initTheme() {
+  const saved = localStorage.getItem('gt_theme')
+  if (saved === 'dark')  { document.documentElement.classList.add('dark');  document.documentElement.classList.remove('light'); return 'dark' }
+  if (saved === 'light') { document.documentElement.classList.add('light'); document.documentElement.classList.remove('dark');  return 'light' }
+  // Sem preferência salva — deixa o @media prefers-color-scheme agir
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+const _initTheme = initTheme() // roda imediatamente ao carregar o script
+
+function useTheme() {
+  const [theme, setTheme] = useState(_initTheme)
+  const toggle = useCallback(() => {
+    setTheme(t => {
+      const next = t === 'dark' ? 'light' : 'dark'
+      localStorage.setItem('gt_theme', next)
+      document.documentElement.classList.toggle('dark',  next === 'dark')
+      document.documentElement.classList.toggle('light', next === 'light')
+      return next
+    })
+  }, [])
+  return [theme, toggle]
+}
 
 // ═══════════════════════════════════════════════════════════
 // CONFIG
@@ -397,7 +460,7 @@ const ExAnim = ({ak,c})=>{ const A=ANIM[ak]||ANIM.push; return A(c) }
 // ═══════════════════════════════════════════════════════════
 const Spinner = ({sz=24,c='var(--black)'})=>(
   <div className="spin" style={{width:sz,height:sz,borderRadius:'50%',
-    border:`3px solid var(--black-12)`,borderTopColor:c,flexShrink:0}}/>
+    border:`3px solid var(--rule)`,borderTopColor:c,flexShrink:0}}/>
 )
 
 const MChip = ({mKey, small=false})=>{
@@ -509,9 +572,9 @@ function ExRow({ex, sel, onClick, delay=0, compact=false}) {
         display:'flex',alignItems:'center',gap:12,
         cursor:onClick?'pointer':'default',
         animationDelay:`${delay}s`,
-        background: sel ? 'var(--black)' : 'var(--off-white)',
-        color: sel ? 'var(--off-white)' : 'var(--fg)',
-        border: `1.5px solid ${sel ? 'var(--black)' : 'var(--black-12)'}`,
+        background: sel ? 'var(--fg)' : 'var(--bg-card)',
+        color: sel ? 'var(--bg)' : 'var(--fg)',
+        border: `1.5px solid ${sel ? 'var(--fg)' : 'var(--rule)'}`,
         transition:'all var(--dur) var(--ease)',
       }}>
       {/* anim box */}
@@ -524,11 +587,11 @@ function ExRow({ex, sel, onClick, delay=0, compact=false}) {
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontWeight:700,fontSize:compact?13:14,
           overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
-          color: sel ? 'var(--off-white)' : 'var(--fg)',
+          color: sel ? 'var(--bg)' : 'var(--fg)',
         }}>{ex.name}</div>
         <div style={{display:'flex',gap:6,marginTop:3,alignItems:'center',flexWrap:'wrap'}}>
           <MChip mKey={ex.m} small/>
-          <span style={{fontSize:12,color: sel ? 'rgba(255,252,244,0.55)' : 'var(--fg-muted)'}}>{ex.eq}</span>
+          <span style={{fontSize:12,color:'var(--fg-muted)'}}>{ex.eq}</span>
         </div>
       </div>
       {sel && (
@@ -548,7 +611,7 @@ function PlanCard({plan, idx, onPlay, onEdit, onDelete, saving}) {
 
   return (
     <div className="card fu" style={{overflow:'hidden',animationDelay:`${idx*.07}s`}}>
-      {/* top accent bar */}
+      {/* top accent bar — lima em light, rosa em dark */}
       <div style={{height:3,background:'var(--lime)',borderRadius:'var(--r-lg) var(--r-lg) 0 0',margin:'-1.5px -1.5px 0 -1.5px'}}/>
 
       <div style={{padding:'18px 18px 16px'}}>
@@ -586,7 +649,7 @@ function PlanCard({plan, idx, onPlay, onEdit, onDelete, saving}) {
             )
           })}
           {plan.exercises.length > 6 && (
-            <div style={{width:28,height:28,borderRadius:'var(--r-sm)',background:'var(--black-12)',
+            <div style={{width:28,height:28,borderRadius:'var(--r-sm)',background:'var(--bg-inset)',
               display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:'var(--fg-muted)'}}>
               +{plan.exercises.length-6}
             </div>
@@ -622,17 +685,17 @@ function AddExSheet({onAdd, onClose, existingIds=[]}) {
     <div style={{position:'fixed',inset:0,background:'rgba(15,15,15,.65)',zIndex:500,
       display:'flex',flexDirection:'column',justifyContent:'flex-end'}}
       onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="su" style={{background:'var(--off-white)',borderRadius:'var(--r-lg) var(--r-lg) 0 0',
+      <div className="su" style={{background:'var(--bg-card)',borderRadius:'var(--r-lg) var(--r-lg) 0 0',
         maxHeight:'80vh',display:'flex',flexDirection:'column',overflow:'hidden',
-        boxShadow:'0 -8px 40px rgba(15,15,15,.2)'}}>
+        boxShadow:'0 -8px 40px rgba(0,0,0,.3)'}}>
 
         {/* handle */}
         <div style={{display:'flex',justifyContent:'center',padding:'12px 0 4px'}}>
-          <div style={{width:36,height:4,borderRadius:2,background:'var(--black-12)'}}/>
+          <div style={{width:36,height:4,borderRadius:2,background:'var(--rule)'}}/>
         </div>
 
         {/* header */}
-        <div style={{padding:'8px 18px 12px',borderBottom:'1.5px solid var(--black-12)',flexShrink:0}}>
+        <div style={{padding:'8px 18px 12px',borderBottom:'1.5px solid var(--rule)',flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
             <div>
               <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:18,
@@ -742,7 +805,7 @@ function WorkoutPlayer({plan, user, onClose}) {
 
   return (
     <div className="su" style={{position:'fixed',inset:0,background:'var(--bg)',zIndex:400,
-      display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      display:'flex',flexDirection:'column',overflow:'hidden',transition:'background .2s'}}>
 
       {/* ── header ── */}
       <div style={{background:'var(--black)',flexShrink:0}}>
@@ -789,10 +852,10 @@ function WorkoutPlayer({plan, user, onClose}) {
           const animC = m.bg==='#0F0F0F' ? '#FFFCF4' : m.c
           return (
             <div key={e.key} style={{
-              background: isDone ? 'var(--black)' : 'var(--off-white)',
+              background: isDone ? 'var(--fg)' : 'var(--bg-card)',
               borderRadius:'var(--r-lg)',overflow:'hidden',
-              border:`1.5px solid ${isDone?'var(--black)':'var(--black-12)'}`,
-              boxShadow: isDone ? 'none' : 'var(--shadow-1)',
+              border:`1.5px solid ${isDone?'var(--fg)':'var(--rule)'}`,
+              boxShadow: isDone ? 'none' : 'var(--shadow-card)',
               transition:'all .2s var(--ease)',
             }}>
               <div style={{padding:'12px 14px',display:'flex',alignItems:'center',gap:12}}>
@@ -800,9 +863,9 @@ function WorkoutPlayer({plan, user, onClose}) {
                 <div style={{
                   width:20,height:20,borderRadius:10,flexShrink:0,
                   display:'flex',alignItems:'center',justifyContent:'center',
-                  background: isDone ? 'var(--lime)' : 'var(--black-12)',
+                  background: isDone ? 'var(--lime)' : 'var(--bg-inset)',
                   fontSize:9,fontWeight:900,
-                  color: isDone ? 'var(--black)' : 'var(--fg-muted)',
+                  color: isDone ? 'var(--bg)' : 'var(--fg-muted)',
                 }}>{i+1}</div>
                 {/* anim */}
                 <div style={{width:46,height:46,flexShrink:0,background:m.bg,
@@ -831,8 +894,8 @@ function WorkoutPlayer({plan, user, onClose}) {
                 <button onClick={()=>toggle(e.key)} style={{
                   flexShrink:0,padding:'8px 12px',borderRadius:'var(--r-sm)',
                   fontWeight:900,fontSize:11,letterSpacing:'.04em',textTransform:'uppercase',
-                  background: isDone ? 'var(--lime)' : 'var(--black)',
-                  color: isDone ? 'var(--black)' : 'var(--off-white)',
+                  background: isDone ? 'var(--lime)' : 'var(--fg)',
+                  color: isDone ? 'var(--black)' : 'var(--bg)',
                   border:'none',
                   display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap',
                   transition:'all .2s var(--ease)',
@@ -847,14 +910,14 @@ function WorkoutPlayer({plan, user, onClose}) {
         {/* ── botão adicionar exercício (Etapa 3) ── */}
         <button onClick={()=>setAddSheet(true)} style={{
           marginTop:4,width:'100%',padding:'12px',
-          border:'1.5px dashed var(--black-40)',borderRadius:'var(--r-lg)',
+          border:'1.5px dashed var(--rule-strong)',borderRadius:'var(--r-lg)',
           background:'transparent',color:'var(--black-60)',
           display:'flex',alignItems:'center',justifyContent:'center',gap:8,
           fontSize:13,fontWeight:700,
           transition:'all var(--dur) var(--ease)',
         }}
-          onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--black)';e.currentTarget.style.color='var(--fg)'}}
-          onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--black-40)';e.currentTarget.style.color='var(--black-60)'}}>
+          onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--fg)';e.currentTarget.style.color='var(--fg)'}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--rule-strong)';e.currentTarget.style.color='var(--fg-muted)'}}>
           <span style={{fontSize:18,lineHeight:1}}>+</span> Adicionar exercício
         </button>
 
@@ -916,12 +979,12 @@ function PlanModal({onSave, onClose, editing}) {
     <div style={{position:'fixed',inset:0,background:'rgba(15,15,15,.65)',zIndex:300,
       display:'flex',flexDirection:'column',justifyContent:'flex-end'}}
       onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="su" style={{background:'var(--off-white)',borderRadius:'var(--r-lg) var(--r-lg) 0 0',
+      <div className="su" style={{background:'var(--bg-card)',borderRadius:'var(--r-lg) var(--r-lg) 0 0',
         maxHeight:'94vh',display:'flex',flexDirection:'column',overflow:'hidden',
-        boxShadow:'0 -8px 40px rgba(15,15,15,.2)'}}>
+        boxShadow:'0 -8px 40px rgba(0,0,0,.3)'}}>
 
         {/* header */}
-        <div style={{padding:'18px 18px 14px',borderBottom:'1.5px solid var(--black-12)',flexShrink:0}}>
+        <div style={{padding:'18px 18px 14px',borderBottom:'1.5px solid var(--rule)',flexShrink:0}}>
           {/* stepper */}
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
             {[1,2].map(n=>(
@@ -929,8 +992,8 @@ function PlanModal({onSave, onClose, editing}) {
                 <div style={{width:24,height:24,borderRadius:12,
                   display:'flex',alignItems:'center',justifyContent:'center',
                   fontSize:11,fontWeight:900,
-                  background:step>=n?'var(--black)':'var(--black-12)',
-                  color:step>=n?'var(--off-white)':'var(--fg-muted)'}}>
+                  background:step>=n?'var(--fg)':'var(--bg-inset)',
+                  color:step>=n?'var(--bg)':'var(--fg-muted)'}}>
                   {step>n?'✓':n}
                 </div>
                 <span style={{fontSize:12,fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',
@@ -938,7 +1001,7 @@ function PlanModal({onSave, onClose, editing}) {
                   {n===1?'Exercícios':'Séries & ordem'}
                 </span>
                 {n<2&&<div style={{flex:1,height:1.5,borderRadius:1,
-                  background:step>1?'var(--black)':'var(--black-12)'}}/>}
+                  background:step>1?'var(--fg)':'var(--rule)'}}/>}
               </React.Fragment>
             ))}
             <button className="btn-icon" onClick={onClose} style={{fontSize:13,marginLeft:8}}>✕</button>
@@ -1004,18 +1067,18 @@ function PlanModal({onSave, onClose, editing}) {
                         return (
                           <button key={d} onClick={()=>move(idx,d)} disabled={dis}
                             style={{width:22,height:22,borderRadius:'var(--r-sm)',fontSize:11,fontWeight:700,
-                              background:dis?'transparent':'var(--black-12)',
-                              color:dis?'var(--black-12)':'var(--fg-muted)',
-                              border:`1.5px solid ${dis?'transparent':'var(--black-12)'}`,
+                              background:dis?'transparent':'var(--bg-inset)',
+                              color:dis?'var(--rule)':'var(--fg-muted)',
+                              border:`1.5px solid ${dis?'transparent':'var(--rule)'}`,
                               display:'flex',alignItems:'center',justifyContent:'center',
                               cursor:dis?'default':'pointer'}}>{ic}</button>
                         )
                       })}
                     </div>
                     {/* num badge */}
-                    <div style={{width:22,height:22,borderRadius:11,background:'var(--black)',
+                    <div style={{width:22,height:22,borderRadius:11,background:'var(--fg)',
                       display:'flex',alignItems:'center',justifyContent:'center',
-                      fontSize:10,color:'var(--off-white)',fontWeight:900,flexShrink:0}}>{idx+1}</div>
+                      fontSize:10,color:'var(--bg)',fontWeight:900,flexShrink:0}}>{idx+1}</div>
                     {/* anim */}
                     <div style={{width:36,height:36,background:m.bg,borderRadius:'var(--r-sm)',padding:3,flexShrink:0}}>
                       <ExAnim ak={ex.a} c={animC}/>
@@ -1031,7 +1094,7 @@ function PlanModal({onSave, onClose, editing}) {
                   {/* sets/reps */}
                   <div style={{display:'flex',gap:10}}>
                     {[['sets','Séries'],['reps','Reps']].map(([f,lbl])=>(
-                      <div key={f} style={{flex:1,background:'var(--black-12)',
+                      <div key={f} style={{flex:1,background:'var(--bg-inset)',
                         borderRadius:'var(--r-md)',padding:'10px 12px'}}>
                         <div style={{fontSize:10,fontWeight:700,letterSpacing:'.08em',
                           textTransform:'uppercase',color:'var(--fg-muted)',marginBottom:8}}>{lbl}</div>
@@ -1039,12 +1102,12 @@ function PlanModal({onSave, onClose, editing}) {
                           {[[(cfg[f]||1)-1,'−'],[(cfg[f]||0)+1,'+']].map(([v,ic],bi)=>(
                             <button key={bi} onClick={()=>upd(id,f,v)}
                               style={{width:32,height:32,borderRadius:'var(--r-sm)',
-                                background:'var(--off-white)',border:'1.5px solid var(--black-12)',
+                                background:'var(--bg-card)',border:'1.5px solid var(--rule)',
                                 color:'var(--fg)',fontSize:18,fontWeight:700,
                                 display:'flex',alignItems:'center',justifyContent:'center',
                                 transition:'all var(--dur) var(--ease)'}}
-                              onMouseEnter={e=>{e.currentTarget.style.background='var(--black)';e.currentTarget.style.color='var(--off-white)'}}
-                              onMouseLeave={e=>{e.currentTarget.style.background='var(--off-white)';e.currentTarget.style.color='var(--fg)'}}>{ic}</button>
+                              onMouseEnter={e=>{e.currentTarget.style.background='var(--fg)';e.currentTarget.style.color='var(--bg)'}}
+                              onMouseLeave={e=>{e.currentTarget.style.background='var(--bg-card)';e.currentTarget.style.color='var(--fg)'}}>{ic}</button>
                           ))}
                           <span style={{fontSize:22,fontWeight:900,minWidth:28,textAlign:'center'}}>{cfg[f]||0}</span>
                         </div>
@@ -1058,7 +1121,7 @@ function PlanModal({onSave, onClose, editing}) {
         </div>
 
         {/* footer */}
-        <div style={{padding:'12px 18px 18px',borderTop:'1.5px solid var(--black-12)',
+        <div style={{padding:'12px 18px 18px',borderTop:'1.5px solid var(--rule)',
           display:'flex',gap:8,flexShrink:0}}>
           {step===2 && (
             <button className="btn-ghost" style={{flex:'none',width:'auto',padding:'12px 16px',fontSize:13}}
@@ -1092,8 +1155,8 @@ function History({uid}) {
 
   if(!hist) return <div style={{display:'flex',justifyContent:'center',padding:'48px 0'}}><Spinner sz={32}/></div>
   if(!hist.length) return (
-    <div style={{textAlign:'center',padding:'44px 20px',background:'var(--off-white)',
-      borderRadius:'var(--r-lg)',border:'2px dashed var(--black-12)'}}>
+    <div style={{textAlign:'center',padding:'44px 20px',background:'var(--bg-card)',
+      borderRadius:'var(--r-lg)',border:'2px dashed var(--rule)'}}>
       <div style={{fontSize:48,marginBottom:12}}>—</div>
       <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:17,marginBottom:6}}>Sem histórico ainda</div>
       <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',fontSize:14,color:'var(--fg-muted)'}}>
@@ -1153,6 +1216,7 @@ function MainApp({user}) {
   const [showCfg,setShowCfg]=useState(false)
   const [weight,setWeight]=useState(70)
   const [goal,setGoal]=useState('hipertrofia')
+  const [theme, toggleTheme] = useTheme()
 
   useEffect(()=>{
     (async ()=>{
@@ -1243,14 +1307,20 @@ function MainApp({user}) {
       <div style={{padding:'20px 18px 0',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <div>
           <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:28,
-            letterSpacing:'var(--track-tight)',lineHeight:.95,color:'var(--black)'}}>
+            letterSpacing:'var(--track-tight)',lineHeight:.95,color:'var(--fg)'}}>
             GYM<br/>TRACKER
           </div>
           <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',
             fontSize:12,color:'var(--fg-muted)',marginTop:4}}>{user.email}</div>
         </div>
-        <button className={`btn-icon ${showCfg?'active':''}`}
-          onClick={()=>setShowCfg(s=>!s)} title="Configurações" style={{fontSize:16}}>⚙</button>
+        <div style={{display:'flex',gap:6}}>
+          <button className="btn-icon" onClick={toggleTheme} title={theme==='dark'?'Modo claro':'Modo escuro'}
+            style={{fontSize:15}}>
+            {theme==='dark' ? '☀' : '☾'}
+          </button>
+          <button className={`btn-icon ${showCfg?'active':''}`}
+            onClick={()=>setShowCfg(s=>!s)} title="Configurações" style={{fontSize:16}}>⚙</button>
+        </div>
       </div>
 
       {/* ── Settings panel ── */}
@@ -1316,8 +1386,8 @@ function MainApp({user}) {
           </div>
           {plans.length===0 && (
             <div style={{textAlign:'center',padding:'44px 16px',
-              background:'var(--off-white)',borderRadius:'var(--r-lg)',
-              border:'2px dashed var(--black-12)'}}>
+              background:'var(--bg-card)',borderRadius:'var(--r-lg)',
+              border:'2px dashed var(--rule)'}}>
               <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:17,marginBottom:6}}>
                 Nenhum treino ainda
               </div>

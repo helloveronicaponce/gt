@@ -38,6 +38,50 @@
       --black-12:  rgba(15,15,15,0.12);
       --off-92:    rgba(255,252,244,0.92);
 
+      /* ── Tipografia ── */
+      --font-display: 'Inter', system-ui, sans-serif;
+      --font-italic:  'EB Garamond', Georgia, serif;
+      --font-body:    'Inter', system-ui, sans-serif;
+
+      --weight-black:   900;
+      --weight-regular: 400;
+
+      --t-h1:    clamp(42px, 7vw, 96px);
+      --t-h2:    28px;
+      --t-body:  16px;
+      --t-sm:    14px;
+      --t-xs:    12px;
+      --t-cap:   11px;
+
+      --lh-tight: 0.92;
+      --lh-snug:  1.10;
+      --lh-body:  1.50;
+
+      --track-tight: -0.02em;
+      --track-cap:    0.08em;
+
+      /* ── Espaçamento ── */
+      --s-1:  4px;
+      --s-2:  8px;
+      --s-3: 12px;
+      --s-4: 16px;
+      --s-5: 24px;
+      --s-6: 32px;
+
+      /* ── Raio ── */
+      --r-sm:   10px;
+      --r-md:   16px;
+      --r-lg:   22px;
+      --r-pill: 999px;
+
+      /* ── Sombra base ── */
+      --shadow-1: 0 2px 6px  rgba(15,15,15,0.05);
+      --shadow-2: 0 6px 20px rgba(15,15,15,0.08);
+
+      /* ── Motion ── */
+      --ease: cubic-bezier(0.32,0.72,0,1);
+      --dur: 200ms;
+
       /* ── Light mode (default) ── */
       --bg:          #FFFCF4;
       --bg-card:     #FFFCF4;
@@ -79,46 +123,6 @@
         --btn-primary-bg: #FFFCF4;
         --btn-primary-fg: #0F0F0F;
       }
-    }
-
-      --font-display: 'Inter', system-ui, sans-serif;
-      --font-italic:  'EB Garamond', Georgia, serif;
-      --font-body:    'Inter', system-ui, sans-serif;
-
-      --weight-black:   900;
-      --weight-regular: 400;
-
-      --t-h1:    clamp(42px, 7vw, 96px);
-      --t-h2:    28px;
-      --t-body:  16px;
-      --t-sm:    14px;
-      --t-xs:    12px;
-      --t-cap:   11px;
-
-      --lh-tight: 0.92;
-      --lh-snug:  1.10;
-      --lh-body:  1.50;
-
-      --track-tight: -0.02em;
-      --track-cap:    0.08em;
-
-      --s-1:  4px;
-      --s-2:  8px;
-      --s-3: 12px;
-      --s-4: 16px;
-      --s-5: 24px;
-      --s-6: 32px;
-
-      --r-sm:   10px;
-      --r-md:   16px;
-      --r-lg:   22px;
-      --r-pill: 999px;
-
-      --shadow-1: 0 2px 6px  rgba(15,15,15,0.05);
-      --shadow-2: 0 6px 20px rgba(15,15,15,0.08);
-
-      --ease: cubic-bezier(0.32,0.72,0,1);
-      --dur: 200ms;
     }
 
     *{box-sizing:border-box;margin:0;padding:0}
@@ -363,7 +367,7 @@ const DB = {
       id:p.id, _db:true, name:p.name,
       exercises:(p.plan_exercises||[])
         .sort((a,b)=>a.position-b.position)
-        .map(e=>({exId:e.exercise_id,sets:e.sets,reps:isNaN(e.reps)?e.reps:+e.reps}))
+        .map(e=>({exId:+e.exercise_id,sets:e.sets,reps:isNaN(e.reps)?e.reps:+e.reps}))
     }))
   },
   async save(plan, uid) {

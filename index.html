@@ -299,6 +299,35 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 })
 
 // ═══════════════════════════════════════════════════════════
+// PERSISTÊNCIA DO TREINO ATIVO
+// ═══════════════════════════════════════════════════════════
+// Snapshot do treino em andamento: salvo a cada mudança de items/done
+// e quando a aba some (visibilitychange/pagehide). Permite retomar
+// exatamente de onde parou se o app for fechado, recarregado, ou
+// descartado da memória pelo iOS.
+const ACTIVE_WORKOUT_KEY = 'gt_active_workout_v1'
+const ACTIVE_WORKOUT_TTL_MS = 12 * 60 * 60 * 1000   // 12h
+
+const loadActiveWorkout = () => {
+  try {
+    const raw = localStorage.getItem(ACTIVE_WORKOUT_KEY)
+    if (!raw) return null
+    const snap = JSON.parse(raw)
+    if (!snap || typeof snap !== 'object') return null
+    if (!snap.savedAt || Date.now() - snap.savedAt > ACTIVE_WORKOUT_TTL_MS) {
+      localStorage.removeItem(ACTIVE_WORKOUT_KEY)
+      return null
+    }
+    if (!Array.isArray(snap.items) || snap.items.length === 0) return null
+    return snap
+  } catch(e) { return null }
+}
+
+const clearActiveWorkout = () => {
+  try { localStorage.removeItem(ACTIVE_WORKOUT_KEY) } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════
 // DADOS — músculos
 // ═══════════════════════════════════════════════════════════
 const M = {
@@ -746,24 +775,73 @@ function AddExSheet({onAdd, onClose, existingIds=[]}) {
 // ═══════════════════════════════════════════════════════════
 // WORKOUT PLAYER  — fix persistência + add-mid-workout
 // ═══════════════════════════════════════════════════════════
-function WorkoutPlayer({plan, user, onClose}) {
+function WorkoutPlayer({plan, user, onClose, resume}) {
   // ⚠️ FIX PERSISTÊNCIA: congelamos uma cópia do plano no momento do início.
   // Assim, mesmo que o usuário edite o plano durante o treino, os exercícios
   // da sessão ativa não são afetados.
-  const [items, setItems] = useState(()=>
-    plan.exercises
+  // Quando 'resume' é passado, hidratamos do snapshot salvo em localStorage —
+  // treino interrompido por queda do app, recarga, descarte de aba PWA.
+  const [items, setItems] = useState(()=> {
+    if (resume?.items?.length) {
+      return resume.items
+        .map(it => ({...it, ex: EX.find(x=>x.id===it.exId)}))
+        .filter(it => it.ex)
+    }
+    return plan.exercises
       .map(e=>({...e, ex:EX.find(x=>x.id===e.exId)}))
       .filter(e=>e.ex)
       .map((e,i)=>({...e, key:`orig-${i}`}))
-  )
-  const [done,setDone]     = useState(new Set())
+  })
+  const [done,setDone]     = useState(()=> new Set(resume?.doneKeys || []))
   const [fin,setFin]       = useState(false)
   const [addSheet,setAddSheet] = useState(false)
-  const startRef = useRef(Date.now())
-  const sidRef   = useRef(null)
+  const startRef = useRef(resume?.startedAt || Date.now())
+  const sidRef   = useRef(resume?.sessionId || null)
 
+  // Mantém refs sincronizadas com o estado pra usar dentro de listeners
+  // que capturam closure antiga (visibilitychange/pagehide).
+  const itemsRef = useRef(items)
+  const doneRef  = useRef(done)
+  useEffect(()=>{ itemsRef.current = items }, [items])
+  useEffect(()=>{ doneRef.current  = done  }, [done])
+
+  // Snapshot serializável do treino atual — pra localStorage.
+  const buildSnapshot = ()=> ({
+    planName: plan.name,
+    planId: plan.id || null,
+    items: itemsRef.current.map(({ex, ...rest}) => rest),  // ex não é serializável de forma estável
+    doneKeys: [...doneRef.current],
+    startedAt: startRef.current,
+    sessionId: sidRef.current,
+    savedAt: Date.now()
+  })
+
+  const persistSnapshot = ()=> {
+    try { localStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify(buildSnapshot())) } catch(e) {}
+  }
+
+  // Inicia a sessão no backend (só na primeira vez — no resume já temos o id).
   useEffect(()=>{
-    DB.startSession(user.id, plan, 0).then(id=>sidRef.current=id).catch(()=>{})
+    if (sidRef.current) return
+    DB.startSession(user.id, plan, 0).then(id=>{
+      sidRef.current = id
+      persistSnapshot()   // re-salva pra incluir o sessionId no snapshot
+    }).catch(()=>{})
+  },[])
+
+  // Persiste a cada mudança em items/done.
+  useEffect(()=>{ persistSnapshot() }, [items, done])
+
+  // Salva também quando a aba some (background, navegação, fechamento) —
+  // este é o caso real do bug: iOS descarta a aba antes do React desmontar.
+  useEffect(()=>{
+    const onHide = ()=> persistSnapshot()
+    window.addEventListener('pagehide', onHide)
+    document.addEventListener('visibilitychange', onHide)
+    return ()=>{
+      window.removeEventListener('pagehide', onHide)
+      document.removeEventListener('visibilitychange', onHide)
+    }
   },[])
 
   const toggle = key => setDone(p=>{
@@ -780,6 +858,7 @@ function WorkoutPlayer({plan, user, onClose}) {
   const finish = async ()=>{
     const mins = Math.round((Date.now()-startRef.current)/60000)
     await DB.finishSession(sidRef.current, done.size, mins).catch(()=>{})
+    clearActiveWorkout()   // treino concluído: limpa snapshot
     setFin(true)
   }
 
@@ -1214,6 +1293,8 @@ function MainApp({user}) {
   const [savingId,setSavingId]=useState(null)
   const [tab,setTab]=useState('plans')
   const [workout,setWorkout]=useState(null)
+  const [resumeData,setResumeData]=useState(null)   // snapshot a ser passado ao Player
+  const [pendingWorkout,setPendingWorkout]=useState(()=>loadActiveWorkout())  // prompt de retomada
   const [modal,setModal]=useState(false)
   const [editing,setEditing]=useState(null)
   const [mf,setMf]=useState(null)
@@ -1289,7 +1370,36 @@ function MainApp({user}) {
   // do plano para o WorkoutPlayer. Assim qualquer edição posterior ao plano
   // não afeta a sessão ativa.
   const startWorkout = (plan) => {
+    setResumeData(null)
     setWorkout(JSON.parse(JSON.stringify(plan)))
+  }
+
+  // Retomada de treino interrompido (queda do app, recarga, descarte de aba PWA).
+  // O snapshot já contém o plano congelado e os exercícios live adicionados.
+  const resumeWorkout = () => {
+    if (!pendingWorkout) return
+    const stubPlan = {
+      id: pendingWorkout.planId,
+      name: pendingWorkout.planName,
+      exercises: pendingWorkout.items.map(it => ({exId: it.exId, sets: it.sets, reps: it.reps}))
+    }
+    setResumeData(pendingWorkout)
+    setWorkout(stubPlan)
+    setPendingWorkout(null)
+  }
+
+  const discardPendingWorkout = () => {
+    clearActiveWorkout()
+    setPendingWorkout(null)
+  }
+
+  const closeWorkout = () => {
+    setWorkout(null)
+    setResumeData(null)
+    // Não limpamos o snapshot aqui — fechar com X mantém o treino pendente,
+    // pra cobrir o caso de fechamento acidental. Quem limpa é finish() ou
+    // o botão "Descartar" no prompt de retomada.
+    setPendingWorkout(loadActiveWorkout())
   }
 
   const flib = mf ? EX.filter(e=>e.m===mf) : EX
@@ -1430,7 +1540,66 @@ function MainApp({user}) {
 
       {/* ── Modals ── */}
       {modal && <PlanModal editing={editing} onSave={savePlan} onClose={()=>{setModal(false);setEditing(null)}}/>}
-      {workout && <WorkoutPlayer plan={workout} user={user} onClose={()=>setWorkout(null)}/>}
+      {workout && <WorkoutPlayer plan={workout} user={user} resume={resumeData} onClose={closeWorkout}/>}
+
+      {/* ── Prompt de retomada de treino interrompido ── */}
+      {pendingWorkout && !workout && (
+        <ResumeWorkoutPrompt
+          snapshot={pendingWorkout}
+          onResume={resumeWorkout}
+          onDiscard={discardPendingWorkout}
+        />
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// RESUME WORKOUT PROMPT
+// ═══════════════════════════════════════════════════════════
+// Aparece quando o usuário reabre o app e existe um treino salvo
+// em localStorage (queda, recarga, descarte da aba PWA pelo iOS).
+function ResumeWorkoutPrompt({snapshot, onResume, onDiscard}) {
+  const total = snapshot.items?.length || 0
+  const done  = snapshot.doneKeys?.length || 0
+  // Usa startedAt (e não savedAt) — savedAt muda a cada toggle/visibilitychange.
+  const refTime = snapshot.startedAt || snapshot.savedAt || Date.now()
+  const minsAgo = Math.max(1, Math.round((Date.now() - refTime) / 60000))
+  const agoLabel = minsAgo < 60
+    ? `há ${minsAgo} min`
+    : `há ${Math.round(minsAgo/60)} h`
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(15,15,15,.65)',zIndex:350,
+      display:'flex',alignItems:'center',justifyContent:'center',padding:18}}>
+      <div className="su" style={{background:'var(--bg-card)',borderRadius:'var(--r-lg)',
+        maxWidth:380,width:'100%',padding:'24px 22px',
+        boxShadow:'0 12px 48px rgba(0,0,0,.32)'}}>
+
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',
+          color:'var(--fg-muted)',marginBottom:10}}>
+          Treino em andamento
+        </div>
+
+        <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:24,
+          letterSpacing:'var(--track-tight)',lineHeight:1.05,color:'var(--fg)',marginBottom:6}}>
+          {snapshot.planName || 'Treino sem nome'}
+        </div>
+
+        <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',
+          fontSize:14,color:'var(--fg-muted)',marginBottom:18}}>
+          {done}/{total} concluídos · iniciado {agoLabel}
+        </div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          <button className="btn-primary" onClick={onResume} style={{fontSize:13}}>
+            → Retomar treino
+          </button>
+          <button className="btn-ghost" onClick={onDiscard} style={{fontSize:12}}>
+            Descartar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

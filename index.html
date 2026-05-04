@@ -308,6 +308,26 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 const ACTIVE_WORKOUT_KEY = 'gt_active_workout_v1'
 const ACTIVE_WORKOUT_TTL_MS = 12 * 60 * 60 * 1000   // 12h
 
+// ═══════════════════════════════════════════════════════════
+// ATLETAS (Tier 3) — Verônica + Diego compartilham conta
+// ═══════════════════════════════════════════════════════════
+// Sessões e séries são taggeadas com athlete pra separar histórico,
+// progresso e PRs. Bioimpedância da Jornada só vale pra 'veronica'.
+const ATHLETES = [
+  {id:'veronica', name:'Verô',  short:'V'},
+  {id:'diego',    name:'Diego', short:'D'},
+]
+const ATHLETE_KEY = 'gt_current_athlete_v1'
+const loadAthlete = () => {
+  try {
+    const v = localStorage.getItem(ATHLETE_KEY)
+    return ATHLETES.find(a => a.id === v) ? v : 'veronica'
+  } catch(e) { return 'veronica' }
+}
+const saveAthlete = (id) => {
+  try { localStorage.setItem(ATHLETE_KEY, id) } catch(e) {}
+}
+
 const loadActiveWorkout = () => {
   try {
     const raw = localStorage.getItem(ACTIVE_WORKOUT_KEY)
@@ -420,9 +440,10 @@ const DB = {
     return {...plan, id:pid, _db:true}
   },
   async del(id) { await sb.from('plans').delete().eq('id',id) },
-  async startSession(uid, plan, kcal) {
+  async startSession(uid, athlete, plan, kcal) {
     const {data} = await sb.from('workout_sessions').insert({
-      user_id:uid, plan_id:plan._db?plan.id:null,
+      user_id:uid, athlete: athlete || 'veronica',
+      plan_id:plan._db?plan.id:null,
       plan_name:plan.name, exercises_total:plan.exercises.length, kcal_estimate:kcal
     }).select().single()
     return data?.id
@@ -433,8 +454,74 @@ const DB = {
       exercises_done:done, duration_minutes:mins, finished_at:new Date().toISOString()
     }).eq('id',sid)
   },
-  async history(uid) {
-    const {data} = await sb.from('workout_sessions').select('*').eq('user_id',uid).order('started_at',{ascending:false}).limit(20)
+  // Salva uma série concluída na nova tabela workout_sets.
+  async saveSet(sid, uid, athlete, exId, exName, n, kg, reps, restSec) {
+    if (!sid || !uid) return
+    await sb.from('workout_sets').insert({
+      session_id: sid, user_id: uid, athlete: athlete || 'veronica',
+      exercise_id: exId, exercise_name: exName,
+      set_number: n,
+      weight_kg: kg ?? null, reps: reps ?? null,
+      rest_seconds_taken: restSec ?? null
+    })
+  },
+  // Busca a última série registrada para um exercício pelo atleta corrente.
+  // Usado para sugerir carga ao iniciar o treino.
+  async lastSet(uid, athlete, exId) {
+    const {data} = await sb.from('workout_sets')
+      .select('weight_kg, reps')
+      .eq('user_id', uid)
+      .eq('athlete', athlete || 'veronica')
+      .eq('exercise_id', exId)
+      .order('completed_at', {ascending:false})
+      .limit(1)
+    return data?.[0] || null
+  },
+  // Tier 2: dados pra a tab Progresso. 12 semanas é o suficiente
+  // pra calendário de consistência e tendência por exercício.
+  async recentSets(uid, athlete, sinceISO) {
+    const {data} = await sb.from('workout_sets')
+      .select('exercise_id, exercise_name, weight_kg, reps, completed_at, session_id')
+      .eq('user_id', uid)
+      .eq('athlete', athlete || 'veronica')
+      .gte('completed_at', sinceISO)
+      .order('completed_at', {ascending:true})
+    return data || []
+  },
+  async recentSessions(uid, athlete, sinceISO) {
+    const {data} = await sb.from('workout_sessions')
+      .select('id, plan_name, started_at, finished_at, exercises_done, exercises_total')
+      .eq('user_id', uid)
+      .eq('athlete', athlete || 'veronica')
+      .gte('started_at', sinceISO)
+      .order('started_at', {ascending:true})
+    return data || []
+  },
+  // Tier 3: bioimpedância da Jornada (só Verô). Lê últimas 90 entradas
+  // pra alimentar o gráfico de evolução em ProgressTab.
+  async bioimpedancia(uid, daysBack) {
+    const since = new Date(Date.now() - (daysBack||90) * 24*60*60*1000).toISOString().slice(0,10)
+    const {data} = await sb.from('jornada_bioimpedancia')
+      .select('data, peso, gordura_pct, massa_musc_total_kg, gordura_visceral')
+      .eq('user_id', uid)
+      .gte('data', since)
+      .order('data', {ascending:true})
+    return data || []
+  },
+  // Tier 3: dump completo de séries pra export CSV. Sem limite de período.
+  async allSetsForExport(uid, athlete) {
+    const {data} = await sb.from('workout_sets')
+      .select('completed_at, athlete, exercise_name, set_number, weight_kg, reps, session_id')
+      .eq('user_id', uid)
+      .eq('athlete', athlete || 'veronica')
+      .order('completed_at', {ascending:true})
+    return data || []
+  },
+  async history(uid, athlete) {
+    const {data} = await sb.from('workout_sessions').select('*')
+      .eq('user_id',uid)
+      .eq('athlete', athlete || 'veronica')
+      .order('started_at',{ascending:false}).limit(20)
     return data||[]
   },
   async profile(uid) {
@@ -773,48 +860,81 @@ function AddExSheet({onAdd, onClose, existingIds=[]}) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// REST COUNTDOWN — força re-render a cada 250ms enquanto roda
+// ═══════════════════════════════════════════════════════════
+function RestCountdown({end}) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(()=>{
+    const id = setInterval(()=>setNow(Date.now()), 250)
+    return ()=> clearInterval(id)
+  },[end])
+  const left = Math.max(0, end - now)
+  const m = Math.floor(left/60000)
+  const s = Math.floor((left%60000)/1000)
+  return <span>{m}:{String(s).padStart(2,'0')}</span>
+}
+
+// ═══════════════════════════════════════════════════════════
 // WORKOUT PLAYER  — fix persistência + add-mid-workout
 // ═══════════════════════════════════════════════════════════
-function WorkoutPlayer({plan, user, onClose, resume}) {
-  // ⚠️ FIX PERSISTÊNCIA: congelamos uma cópia do plano no momento do início.
-  // Assim, mesmo que o usuário edite o plano durante o treino, os exercícios
-  // da sessão ativa não são afetados.
-  // Quando 'resume' é passado, hidratamos do snapshot salvo em localStorage —
-  // treino interrompido por queda do app, recarga, descarte de aba PWA.
+function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
+  // Inicializa o array de séries de um exercício (n entradas vazias).
+  const initSetsLog = (n) => Array.from({length: n||1}, (_,i)=>(
+    {n:i+1, kg:null, reps:null, done:false}
+  ))
+
+  // Cada item do treino agora carrega seu próprio setsLog — array de séries
+  // com kg/reps/done individuais. Substitui o checkbox único do exercício.
   const [items, setItems] = useState(()=> {
     if (resume?.items?.length) {
       return resume.items
-        .map(it => ({...it, ex: EX.find(x=>x.id===it.exId)}))
+        .map(it => ({
+          ...it,
+          ex: EX.find(x=>x.id===it.exId),
+          setsLog: (it.setsLog && it.setsLog.length) ? it.setsLog : initSetsLog(it.sets)
+        }))
         .filter(it => it.ex)
     }
     return plan.exercises
       .map(e=>({...e, ex:EX.find(x=>x.id===e.exId)}))
       .filter(e=>e.ex)
-      .map((e,i)=>({...e, key:`orig-${i}`}))
+      .map((e,i)=>({...e, key:`orig-${i}`, setsLog: initSetsLog(e.sets)}))
   })
-  const [done,setDone]     = useState(()=> new Set(resume?.doneKeys || []))
   const [fin,setFin]       = useState(false)
   const [addSheet,setAddSheet] = useState(false)
+  const [restEnd, setRestEnd] = useState(null)         // timestamp do fim do descanso
+  const [suggestions, setSuggestions] = useState({})   // { exId: {weight_kg, reps} }
   const startRef = useRef(resume?.startedAt || Date.now())
   const sidRef   = useRef(resume?.sessionId || null)
 
-  // Mantém refs sincronizadas com o estado pra usar dentro de listeners
-  // que capturam closure antiga (visibilitychange/pagehide).
+  // 'done' deriva dos itens: exercício é done quando todas as séries têm done=true.
+  // Calculado a cada render — barato e elimina sincronização entre dois estados.
+  const doneSet = new Set(
+    items
+      .filter(it => it.setsLog && it.setsLog.length > 0 && it.setsLog.every(s => s.done))
+      .map(it => it.key)
+  )
+
+  // Refs sincronizadas com state pra usar em listeners de visibilitychange/pagehide.
   const itemsRef = useRef(items)
-  const doneRef  = useRef(done)
   useEffect(()=>{ itemsRef.current = items }, [items])
-  useEffect(()=>{ doneRef.current  = done  }, [done])
 
   // Snapshot serializável do treino atual — pra localStorage.
-  const buildSnapshot = ()=> ({
-    planName: plan.name,
-    planId: plan.id || null,
-    items: itemsRef.current.map(({ex, ...rest}) => rest),  // ex não é serializável de forma estável
-    doneKeys: [...doneRef.current],
-    startedAt: startRef.current,
-    sessionId: sidRef.current,
-    savedAt: Date.now()
-  })
+  const buildSnapshot = ()=> {
+    const itemsNow = itemsRef.current
+    const doneKeys = itemsNow
+      .filter(it => it.setsLog && it.setsLog.length > 0 && it.setsLog.every(s => s.done))
+      .map(it => it.key)
+    return {
+      planName: plan.name,
+      planId: plan.id || null,
+      items: itemsNow.map(({ex, ...rest}) => rest),  // ex não é serializável
+      doneKeys,
+      startedAt: startRef.current,
+      sessionId: sidRef.current,
+      savedAt: Date.now()
+    }
+  }
 
   const persistSnapshot = ()=> {
     try { localStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify(buildSnapshot())) } catch(e) {}
@@ -823,17 +943,40 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
   // Inicia a sessão no backend (só na primeira vez — no resume já temos o id).
   useEffect(()=>{
     if (sidRef.current) return
-    DB.startSession(user.id, plan, 0).then(id=>{
+    DB.startSession(user.id, athlete, plan, 0).then(id=>{
       sidRef.current = id
-      persistSnapshot()   // re-salva pra incluir o sessionId no snapshot
+      persistSnapshot()
     }).catch(()=>{})
   },[])
 
-  // Persiste a cada mudança em items/done.
-  useEffect(()=>{ persistSnapshot() }, [items, done])
+  // Busca a última carga registrada de cada exercício pra sugerir e pré-popular.
+  // Roda 1x no mount; se falha silencioso, usuário só não vê a sugestão.
+  useEffect(()=>{
+    let cancelled = false
+    Promise.all(items.map(it => DB.lastSet(user.id, athlete, it.exId).catch(()=>null)))
+      .then(results => {
+        if (cancelled) return
+        const map = {}
+        items.forEach((it, idx) => {
+          if (results[idx]) map[it.exId] = results[idx]
+        })
+        setSuggestions(map)
+        // Pré-popula kg da 1ª série dos itens cuja série 1 ainda está vazia.
+        setItems(prev => prev.map(it => {
+          const sug = map[it.exId]
+          if (!sug || !it.setsLog || !it.setsLog.length) return it
+          if (it.setsLog[0].kg !== null && it.setsLog[0].kg !== undefined && it.setsLog[0].kg !== '') return it
+          const nextLog = it.setsLog.map((s,i) => i === 0 ? {...s, kg: sug.weight_kg} : s)
+          return {...it, setsLog: nextLog}
+        }))
+      })
+    return ()=>{ cancelled = true }
+  },[])
 
-  // Salva também quando a aba some (background, navegação, fechamento) —
-  // este é o caso real do bug: iOS descarta a aba antes do React desmontar.
+  // Persiste a cada mudança nos items.
+  useEffect(()=>{ persistSnapshot() }, [items])
+
+  // Salva também quando a aba some (iOS descarta a aba antes do React desmontar).
   useEffect(()=>{
     const onHide = ()=> persistSnapshot()
     window.addEventListener('pagehide', onHide)
@@ -844,25 +987,75 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
     }
   },[])
 
-  const toggle = key => setDone(p=>{
-    const s=new Set(p); s.has(key)?s.delete(key):s.add(key); return s
-  })
+  // Cronômetro de descanso: vibra ao chegar em 0 e auto-encerra.
+  // useEffect dispara quando restEnd muda; clear no unmount.
+  useEffect(()=>{
+    if (!restEnd) return
+    const tick = ()=>{
+      if (Date.now() >= restEnd) {
+        try { navigator.vibrate && navigator.vibrate([300, 100, 300]) } catch(e) {}
+        setRestEnd(null)
+      }
+    }
+    const id = setInterval(tick, 250)
+    return ()=> clearInterval(id)
+  },[restEnd])
 
-  // Adiciona exercício ao vivo (não persiste no plano)
+  // Marca/desmarca uma série como concluída.
+  // Quando vira done=true: dispara cronômetro de 90s e persiste no Supabase.
+  const toggleSet = (itemKey, setN) => {
+    const it = items.find(i => i.key === itemKey)
+    const s  = it?.setsLog.find(x => x.n === setN)
+    const willBeDone = s && !s.done
+    setItems(prev => prev.map(item => {
+      if (item.key !== itemKey) return item
+      return {
+        ...item,
+        setsLog: item.setsLog.map(x => x.n === setN ? {...x, done: !x.done} : x)
+      }
+    }))
+    if (willBeDone) {
+      setRestEnd(Date.now() + 90 * 1000)
+      if (sidRef.current && it && s) {
+        DB.saveSet(sidRef.current, user.id, athlete, it.exId, it.ex?.name || '', setN, s.kg, s.reps, null).catch(()=>{})
+      }
+    }
+  }
+
+  // Atualiza kg ou reps de uma série; propaga kg da série 1 pras vazias seguintes.
+  const updateSet = (itemKey, setN, field, value) => {
+    setItems(prev => prev.map(it => {
+      if (it.key !== itemKey) return it
+      const next = it.setsLog.map(s => s.n === setN ? {...s, [field]: value} : s)
+      if (setN === 1 && field === 'kg' && value !== null && value !== '') {
+        for (let i = 1; i < next.length; i++) {
+          if (next[i].kg === null || next[i].kg === undefined || next[i].kg === '') {
+            next[i] = {...next[i], kg: value}
+          }
+        }
+      }
+      return {...it, setsLog: next}
+    }))
+  }
+
+  // Adiciona exercício ao vivo (não persiste no plano).
   const addLive = (ex) => {
     const defaultCfg = { sets: ex.ds, reps: ex.dr }
     const key = `live-${Date.now()}`
-    setItems(prev=>[...prev, {exId:ex.id, ex, key, ...defaultCfg, isLive:true}])
+    setItems(prev=>[...prev, {
+      exId:ex.id, ex, key, ...defaultCfg, isLive:true,
+      setsLog: initSetsLog(defaultCfg.sets)
+    }])
   }
 
   const finish = async ()=>{
     const mins = Math.round((Date.now()-startRef.current)/60000)
-    await DB.finishSession(sidRef.current, done.size, mins).catch(()=>{})
-    clearActiveWorkout()   // treino concluído: limpa snapshot
+    await DB.finishSession(sidRef.current, doneSet.size, mins).catch(()=>{})
+    clearActiveWorkout()
     setFin(true)
   }
 
-  const pct = items.length ? (done.size/items.length)*100 : 0
+  const pct = items.length ? (doneSet.size/items.length)*100 : 0
 
   if(fin) return (
     <div className="su" style={{position:'fixed',inset:0,background:'var(--black)',zIndex:400,
@@ -877,7 +1070,7 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
         </div>
         <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',
           fontSize:16,color:'rgba(255,252,244,0.55)',marginTop:10}}>
-          {done.size} de {items.length} exercícios
+          {doneSet.size} de {items.length} exercícios
         </div>
       </div>
       <button className="btn-primary btn-lime" style={{maxWidth:280,fontSize:13}} onClick={onClose}>
@@ -899,7 +1092,7 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
               letterSpacing:'var(--track-tight)',color:'var(--off-white)',
               overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{plan.name}</div>
             <div style={{fontSize:12,color:'rgba(255,252,244,0.50)',fontWeight:600,marginTop:1}}>
-              {done.size}/{items.length} concluídos
+              {doneSet.size}/{items.length} concluídos
             </div>
           </div>
           {/* progress ring */}
@@ -923,16 +1116,17 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
         {/* tip */}
         <div style={{padding:'8px 16px',background:'rgba(212,255,61,0.10)',
           fontSize:12,color:'rgba(212,255,61,0.85)',fontWeight:600,display:'flex',gap:6,alignItems:'center'}}>
-          <span>→</span> Toque em "Feito" em qualquer ordem — pule e volte quando quiser
+          <span>→</span> Preencha kg e reps de cada série, depois marque o ✓
         </div>
       </div>
 
       {/* ── exercise list ── */}
       <div style={{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
         {items.map((e,i)=>{
-          const isDone = done.has(e.key)
+          const isDone = doneSet.has(e.key)
           const m = M[e.ex.m]
           const animC = m.bg==='#0F0F0F' ? '#FFFCF4' : m.c
+          const sug = suggestions[e.exId]
           return (
             <div key={e.key} style={{
               background: isDone ? 'var(--fg)' : 'var(--bg-card)',
@@ -941,24 +1135,23 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
               boxShadow: isDone ? 'none' : 'var(--shadow-card)',
               transition:'all .2s var(--ease)',
             }}>
-              <div style={{padding:'12px 14px',display:'flex',alignItems:'center',gap:12}}>
-                {/* num */}
+              {/* header */}
+              <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',gap:12}}>
                 <div style={{
                   width:20,height:20,borderRadius:10,flexShrink:0,
                   display:'flex',alignItems:'center',justifyContent:'center',
                   background: isDone ? 'var(--lime)' : 'var(--bg-inset)',
                   fontSize:9,fontWeight:900,
                   color: isDone ? 'var(--bg)' : 'var(--fg-muted)',
-                }}>{i+1}</div>
-                {/* anim */}
-                <div style={{width:46,height:46,flexShrink:0,background:m.bg,
+                }}>{isDone ? '✓' : i+1}</div>
+                <div style={{width:40,height:40,flexShrink:0,background:m.bg,
                   borderRadius:'var(--r-sm)',padding:4,
                   opacity:isDone?.5:1,transition:'opacity .2s'}}>
                   <ExAnim ak={e.ex.a} c={animC}/>
                 </div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:700,fontSize:13,
-                    color:isDone?'rgba(255,252,244,0.45)':'var(--fg)',
+                    color:isDone?'rgba(255,252,244,0.55)':'var(--fg)',
                     textDecoration:isDone?'line-through':'none',
                     overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginBottom:3}}>
                     {e.ex.name}
@@ -966,26 +1159,69 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
                       background:'var(--lime)',color:'var(--black)',
                       padding:'1px 5px',borderRadius:999,fontWeight:700}}>+</span>}
                   </div>
-                  <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                    <span style={{fontSize:13,fontWeight:900,
-                      color:isDone?'rgba(255,252,244,0.35)':'var(--fg)'}}>
-                      {e.sets}×{e.reps}{typeof e.reps==='number'?' reps':''}
+                  <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                    <span style={{fontSize:11,fontWeight:900,
+                      color:isDone?'rgba(255,252,244,0.35)':'var(--fg-muted)',
+                      letterSpacing:'.04em',textTransform:'uppercase'}}>
+                      {e.setsLog.length}×{e.reps}
                     </span>
                     <MChip mKey={e.ex.m} small/>
+                    {sug && !isDone && (
+                      <span style={{fontSize:11,fontStyle:'italic',
+                        fontFamily:'var(--font-italic)',color:'var(--fg-muted)'}}>
+                        última: {sug.weight_kg ?? '?'}kg × {sug.reps ?? '?'} reps
+                      </span>
+                    )}
                   </div>
                 </div>
-                <button onClick={()=>toggle(e.key)} style={{
-                  flexShrink:0,padding:'8px 12px',borderRadius:'var(--r-sm)',
-                  fontWeight:900,fontSize:11,letterSpacing:'.04em',textTransform:'uppercase',
-                  background: isDone ? 'var(--lime)' : 'var(--fg)',
-                  color: isDone ? 'var(--black)' : 'var(--bg)',
-                  border:'none',
-                  display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap',
-                  transition:'all .2s var(--ease)',
-                }}>
-                  {isDone ? <><span className="chk">✓</span>Feito</> : <>○ Concluir</>}
-                </button>
               </div>
+              {/* sets table */}
+              {!isDone && (
+                <div style={{padding:'4px 14px 12px',display:'flex',flexDirection:'column',gap:6}}>
+                  {e.setsLog.map(s => (
+                    <div key={s.n} style={{
+                      display:'flex',alignItems:'center',gap:8,
+                      padding:'6px 8px',
+                      background: s.done ? 'rgba(212,255,61,0.18)' : 'var(--bg-inset)',
+                      borderRadius:'var(--r-sm)',
+                      transition:'background .2s var(--ease)',
+                    }}>
+                      <div style={{fontSize:10,fontWeight:900,letterSpacing:'.06em',
+                        textTransform:'uppercase',color:'var(--fg-muted)',width:46,flexShrink:0}}>
+                        Série {s.n}
+                      </div>
+                      <input type="number" inputMode="decimal" step="0.5"
+                        value={s.kg ?? ''}
+                        onChange={ev => updateSet(e.key, s.n, 'kg', ev.target.value === '' ? null : parseFloat(ev.target.value))}
+                        placeholder="kg"
+                        style={{
+                          flex:1,minWidth:0,padding:'8px 10px',borderRadius:'var(--r-sm)',
+                          border:'1.5px solid var(--rule)',background:'var(--bg)',
+                          fontSize:14,fontWeight:700,color:'var(--fg)',textAlign:'center',
+                        }}/>
+                      <span style={{fontSize:11,color:'var(--fg-muted)',fontWeight:700}}>×</span>
+                      <input type="number" inputMode="numeric"
+                        value={s.reps ?? ''}
+                        onChange={ev => updateSet(e.key, s.n, 'reps', ev.target.value === '' ? null : parseInt(ev.target.value, 10))}
+                        placeholder={String(e.reps)}
+                        style={{
+                          width:60,padding:'8px 10px',borderRadius:'var(--r-sm)',
+                          border:'1.5px solid var(--rule)',background:'var(--bg)',
+                          fontSize:14,fontWeight:700,color:'var(--fg)',textAlign:'center',
+                        }}/>
+                      <button onClick={()=>toggleSet(e.key, s.n)} style={{
+                        flexShrink:0,width:36,height:36,borderRadius:'var(--r-sm)',
+                        background: s.done ? 'var(--lime)' : 'var(--fg)',
+                        color: s.done ? 'var(--black)' : 'var(--bg)',
+                        border:'none',fontWeight:900,fontSize:14,
+                        transition:'background .15s var(--ease)',
+                      }}>
+                        {s.done ? '✓' : '○'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
@@ -1007,14 +1243,47 @@ function WorkoutPlayer({plan, user, onClose, resume}) {
         <div style={{height:8}}/>
       </div>
 
+      {/* ── rest timer ── */}
+      {restEnd && (
+        <div style={{padding:'10px 16px',background:'var(--lime)',
+          borderTop:'1.5px solid rgba(15,15,15,0.10)',flexShrink:0,
+          display:'flex',alignItems:'center',gap:10}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:10,fontWeight:900,letterSpacing:'.08em',
+              textTransform:'uppercase',color:'rgba(15,15,15,0.55)'}}>
+              Descanso
+            </div>
+            <div style={{fontFamily:'var(--font-display)',fontWeight:900,
+              fontSize:24,color:'var(--black)',letterSpacing:'var(--track-tight)',lineHeight:1}}>
+              <RestCountdown end={restEnd}/>
+            </div>
+          </div>
+          <button onClick={()=>setRestEnd(end => Math.max(Date.now()+5000, (end||Date.now())-15000))}
+            style={{padding:'6px 10px',borderRadius:'var(--r-sm)',background:'rgba(15,15,15,0.12)',
+              border:'none',color:'var(--black)',fontSize:11,fontWeight:900}}>
+            −15s
+          </button>
+          <button onClick={()=>setRestEnd(end => (end||Date.now())+15000)}
+            style={{padding:'6px 10px',borderRadius:'var(--r-sm)',background:'rgba(15,15,15,0.12)',
+              border:'none',color:'var(--black)',fontSize:11,fontWeight:900}}>
+            +15s
+          </button>
+          <button onClick={()=>setRestEnd(null)}
+            style={{padding:'6px 12px',borderRadius:'var(--r-sm)',background:'var(--black)',
+              border:'none',color:'var(--off-white)',fontSize:11,fontWeight:900}}>
+            Pular
+          </button>
+        </div>
+      )}
+
       {/* ── finish bar ── */}
-      {done.size > 0 && (
+      {doneSet.size > 0 && (
         <div style={{padding:'12px 16px 18px',background:'var(--black)',
           borderTop:'1.5px solid rgba(255,252,244,0.08)',flexShrink:0}}>
           <button className="btn-primary btn-lime" style={{fontSize:13}} onClick={finish}>
-            {done.size===items.length
+            {doneSet.size===items.length
               ? '🏆 Finalizar treino'
-              : `→ Encerrar (${done.size}/${items.length})`}
+              : `→ Encerrar (${doneSet.size}/${items.length})`}
           </button>
         </div>
       )}
@@ -1232,9 +1501,9 @@ function PlanModal({onSave, onClose, editing}) {
 // ═══════════════════════════════════════════════════════════
 // HISTORY
 // ═══════════════════════════════════════════════════════════
-function History({uid}) {
+function History({uid, athlete}) {
   const [hist,setHist]=useState(null)
-  useEffect(()=>{DB.history(uid).then(setHist).catch(()=>setHist([]))},[uid])
+  useEffect(()=>{DB.history(uid, athlete).then(setHist).catch(()=>setHist([]))},[uid, athlete])
 
   if(!hist) return <div style={{display:'flex',justifyContent:'center',padding:'48px 0'}}><Spinner sz={32}/></div>
   if(!hist.length) return (
@@ -1285,6 +1554,387 @@ function History({uid}) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// PROGRESS TAB (Tier 2)
+// ═══════════════════════════════════════════════════════════
+// Tab Progresso — concentra: volume da semana, calendário de
+// consistência (12 sem), top PRs estimados (Epley) e gráfico de
+// progressão por exercício. Sem libs externas, SVG inline.
+// ═══════════════════════════════════════════════════════════
+
+// Início da semana atual (segunda) em horário local.
+const _startOfWeek = ()=>{
+  const now = new Date()
+  const dayOfWeek = (now.getDay() + 6) % 7   // 0=Mon ... 6=Sun
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - dayOfWeek)
+  monday.setHours(0,0,0,0)
+  return monday
+}
+
+// Bloco visual padrão de seção.
+const ProgSection = ({title, subtitle, children})=>(
+  <section style={{marginBottom:24}}>
+    <div style={{fontSize:11,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',
+      color:'var(--fg-muted)',marginBottom:4}}>{title}</div>
+    {subtitle && <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',
+      fontSize:12,color:'var(--fg-muted)',marginBottom:12}}>{subtitle}</div>}
+    {children}
+  </section>
+)
+
+// Volume por grupo muscular na semana atual (seg-dom).
+function WeekVolumeBars({sets}) {
+  const monday = _startOfWeek()
+  const thisWeek = sets.filter(s => new Date(s.completed_at) >= monday)
+  const byMuscle = {}
+  Object.keys(M).forEach(m => byMuscle[m] = 0)
+  thisWeek.forEach(s => {
+    const ex = EX.find(x => x.id === s.exercise_id)
+    if (ex) byMuscle[ex.m] = (byMuscle[ex.m] || 0) + 1
+  })
+  const max = Math.max(1, ...Object.values(byMuscle))
+  return (
+    <ProgSection title="Volume da semana" subtitle={`${thisWeek.length} séries · semana atual`}>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {Object.entries(M).map(([k, v]) => {
+          const count = byMuscle[k]
+          const pct = (count / max) * 100
+          return (
+            <div key={k} style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:64,fontSize:11,fontWeight:700,color:'var(--fg)'}}>{v.l}</div>
+              <div style={{flex:1,height:14,background:'var(--bg-inset)',borderRadius:7,
+                overflow:'hidden',position:'relative'}}>
+                <div style={{
+                  width:`${pct}%`,height:'100%',
+                  background:v.bg==='#0F0F0F'?'var(--fg)':v.bg,
+                  transition:'width .4s var(--ease)'
+                }}/>
+              </div>
+              <div style={{width:28,textAlign:'right',fontSize:12,fontWeight:900,color:'var(--fg)'}}>
+                {count}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </ProgSection>
+  )
+}
+
+// Calendário de consistência: 12 semanas × 7 dias.
+// Linhas = dias da semana (Seg→Dom), colunas = semanas (mais antiga à esq).
+function ConsistencyCalendar({sessions}) {
+  const monday = _startOfWeek()
+  const start = new Date(monday)
+  start.setDate(monday.getDate() - 11 * 7)   // 12 semanas atrás (incluindo a atual)
+
+  const byDay = {}
+  sessions.forEach(s => {
+    if (!s.finished_at) return
+    const key = new Date(s.finished_at).toISOString().slice(0,10)
+    byDay[key] = (byDay[key] || 0) + 1
+  })
+
+  const weeks = []
+  for (let w = 0; w < 12; w++) {
+    const days = []
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(start)
+      date.setDate(start.getDate() + w*7 + d)
+      const key = date.toISOString().slice(0,10)
+      days.push({date, key, count: byDay[key] || 0})
+    }
+    weeks.push(days)
+  }
+  const totalDays = Object.keys(byDay).length
+
+  return (
+    <ProgSection title="Consistência" subtitle={`últimas 12 semanas · ${totalDays} dias treinados`}>
+      <div style={{display:'flex',gap:3,overflowX:'auto'}}>
+        {weeks.map((days, wi) => (
+          <div key={wi} style={{display:'flex',flexDirection:'column',gap:3}}>
+            {days.map((d) => {
+              const intensity = d.count === 0 ? 0 : Math.min(1, 0.45 + d.count * 0.25)
+              return (
+                <div key={d.key}
+                  title={`${d.date.toLocaleDateString('pt-BR')}${d.count?` · ${d.count} treino`:''}`}
+                  style={{
+                    width:14,height:14,borderRadius:3,
+                    background: d.count === 0 ? 'var(--bg-inset)' : 'var(--lime)',
+                    opacity: d.count === 0 ? 1 : intensity,
+                    transition:'background .2s var(--ease)',
+                  }}/>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </ProgSection>
+  )
+}
+
+// Top 5 exercícios por 1RM estimado (fórmula de Epley).
+function TopPRsList({sets}) {
+  const byEx = {}
+  sets.forEach(s => {
+    if (!s.weight_kg || !s.reps) return
+    const oneRM = s.weight_kg * (1 + s.reps / 30)
+    if (!byEx[s.exercise_id] || oneRM > byEx[s.exercise_id].oneRM) {
+      byEx[s.exercise_id] = {
+        exId: s.exercise_id,
+        name: s.exercise_name || (EX.find(x => x.id === s.exercise_id)?.name || 'Exercício'),
+        oneRM, kg: s.weight_kg, reps: s.reps
+      }
+    }
+  })
+  const top = Object.values(byEx).sort((a,b) => b.oneRM - a.oneRM).slice(0,5)
+  if (top.length === 0) return null
+  return (
+    <ProgSection title="PRs estimados" subtitle="1RM via Epley · top 5">
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        {top.map(pr => (
+          <div key={pr.exId} style={{
+            display:'flex',alignItems:'center',gap:10,
+            padding:'10px 12px',background:'var(--bg-card)',
+            border:'1.5px solid var(--rule)',borderRadius:'var(--r-md)',
+          }}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:13,color:'var(--fg)',
+                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {pr.name}
+              </div>
+              <div style={{fontSize:11,color:'var(--fg-muted)',marginTop:1}}>
+                base: {pr.kg}kg × {pr.reps} reps
+              </div>
+            </div>
+            <div style={{
+              fontFamily:'var(--font-display)',fontWeight:900,fontSize:18,
+              color:'var(--fg)',letterSpacing:'var(--track-tight)'
+            }}>
+              {Math.round(pr.oneRM*10)/10}<span style={{fontSize:11,fontWeight:700,marginLeft:2}}>kg</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </ProgSection>
+  )
+}
+
+// Gráfico de progressão por exercício — linha SVG.
+function ProgressionChart({sets}) {
+  const byEx = {}
+  sets.forEach(s => {
+    if (!s.weight_kg) return
+    const day = String(s.completed_at).slice(0,10)
+    if (!byEx[s.exercise_id]) byEx[s.exercise_id] = {
+      name: s.exercise_name || (EX.find(x => x.id === s.exercise_id)?.name || 'Exercício'),
+      days: {}
+    }
+    byEx[s.exercise_id].days[day] = Math.max(byEx[s.exercise_id].days[day] || 0, s.weight_kg)
+  })
+  const eligible = Object.entries(byEx)
+    .filter(([, e]) => Object.keys(e.days).length >= 2)
+    .sort((a, b) => Object.keys(b[1].days).length - Object.keys(a[1].days).length)
+  const [selected, setSelected] = useState(eligible[0]?.[0] || '')
+  if (eligible.length === 0) {
+    return (
+      <ProgSection title="Progressão" subtitle="precisa de 2+ dias com o mesmo exercício">
+        <div style={{padding:'24px 16px',textAlign:'center',
+          background:'var(--bg-card)',border:'2px dashed var(--rule)',borderRadius:'var(--r-lg)',
+          color:'var(--fg-muted)',fontSize:13}}>
+          Treina algumas vezes pra começar a ver evolução aqui.
+        </div>
+      </ProgSection>
+    )
+  }
+  const cur = byEx[selected] || byEx[eligible[0][0]]
+  const points = Object.entries(cur.days)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, kg]) => ({day, kg}))
+
+  // Layout SVG
+  const w = 320, h = 140, pad = 24
+  const kgs = points.map(p => p.kg)
+  const minKg = Math.min(...kgs)
+  const maxKg = Math.max(...kgs)
+  const rangeKg = Math.max(0.5, maxKg - minKg)
+  const xs = points.map((_, i) =>
+    pad + (points.length === 1 ? (w - 2*pad)/2 : (i / (points.length - 1)) * (w - 2*pad)))
+  const ys = points.map(p => h - pad - ((p.kg - minKg) / rangeKg) * (h - 2*pad))
+  const path = points.map((_, i) => `${i === 0 ? 'M' : 'L'}${xs[i].toFixed(1)} ${ys[i].toFixed(1)}`).join(' ')
+
+  return (
+    <ProgSection title="Progressão" subtitle={`carga × tempo · ${points.length} dia${points.length>1?'s':''}`}>
+      <select value={selected} onChange={ev => setSelected(ev.target.value)}
+        style={{
+          width:'100%',padding:'10px 12px',borderRadius:'var(--r-sm)',
+          border:'1.5px solid var(--rule)',background:'var(--bg-card)',
+          fontSize:13,fontWeight:700,color:'var(--fg)',marginBottom:10,
+        }}>
+        {eligible.map(([id, e]) => <option key={id} value={id}>{e.name}</option>)}
+      </select>
+      <div style={{padding:14,background:'var(--bg-card)',
+        border:'1.5px solid var(--rule)',borderRadius:'var(--r-md)'}}>
+        <svg viewBox={`0 0 ${w} ${h}`} style={{width:'100%',height:'auto',display:'block'}}>
+          {/* baseline */}
+          <line x1={pad} y1={h-pad} x2={w-pad} y2={h-pad} stroke="var(--rule)" strokeWidth={1}/>
+          <path d={path} stroke="var(--lime)" strokeWidth={2.5} fill="none" strokeLinecap="round"/>
+          {points.map((_, i) => (
+            <circle key={i} cx={xs[i]} cy={ys[i]} r={3.5} fill="var(--lime)"
+              stroke="var(--fg)" strokeWidth={1.2}/>
+          ))}
+        </svg>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:6,
+          fontSize:11,color:'var(--fg-muted)'}}>
+          <span>{points[0].day.slice(5).split('-').reverse().join('/')} · {points[0].kg}kg</span>
+          <span>{points[points.length-1].day.slice(5).split('-').reverse().join('/')} · {points[points.length-1].kg}kg</span>
+        </div>
+      </div>
+    </ProgSection>
+  )
+}
+
+function ProgressTab({uid, athlete}) {
+  const [loading, setLoading] = useState(true)
+  const [sets, setSets] = useState([])
+  const [sessions, setSessions] = useState([])
+  const [bio, setBio] = useState([])
+
+  useEffect(()=>{
+    setLoading(true)
+    const since = new Date(Date.now() - 12 * 7 * 24 * 60 * 60 * 1000).toISOString()
+    const promises = [DB.recentSets(uid, athlete, since), DB.recentSessions(uid, athlete, since)]
+    // Bioimpedância só pra Verô (a Jornada é só dela).
+    promises.push(athlete === 'veronica' ? DB.bioimpedancia(uid, 90) : Promise.resolve([]))
+    Promise.all(promises)
+      .then(([s, ss, b]) => { setSets(s); setSessions(ss); setBio(b) })
+      .catch(e => console.warn('Progress fetch falhou', e))
+      .finally(() => setLoading(false))
+  },[uid, athlete])
+
+  if (loading) return (
+    <div style={{padding:'40px 16px',textAlign:'center'}}>
+      <Spinner sz={28}/>
+    </div>
+  )
+
+  const empty = sets.length === 0 && sessions.length === 0
+  if (empty && bio.length === 0) return (
+    <div style={{textAlign:'center',padding:'44px 16px',
+      background:'var(--bg-card)',borderRadius:'var(--r-lg)',
+      border:'2px dashed var(--rule)'}}>
+      <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:17,marginBottom:6}}>
+        Sem dados ainda
+      </div>
+      <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',
+        fontSize:14,color:'var(--fg-muted)'}}>
+        Treina algumas vezes registrando carga e reps — o progresso aparece aqui.
+      </div>
+    </div>
+  )
+
+  return (
+    <div>
+      {!empty && <WeekVolumeBars sets={sets}/>}
+      {!empty && <ConsistencyCalendar sessions={sessions}/>}
+      {bio.length > 0 && <BioCompositionChart bio={bio}/>}
+      {!empty && <TopPRsList sets={sets}/>}
+      {!empty && <ProgressionChart sets={sets}/>}
+    </div>
+  )
+}
+
+// Tier 3: composição corporal (peso, %gordura, massa muscular) ao longo de 90 dias.
+function BioCompositionChart({bio}) {
+  if (!bio || bio.length === 0) return null
+  const last = bio[bio.length - 1]
+  const first = bio[0]
+  const deltaPeso = last.peso != null && first.peso != null
+    ? Math.round((last.peso - first.peso) * 10) / 10
+    : null
+  const deltaGord = last.gordura_pct != null && first.gordura_pct != null
+    ? Math.round((last.gordura_pct - first.gordura_pct) * 10) / 10
+    : null
+
+  // Linhas SVG sobrepostas: peso (lime) e %gordura (pink)
+  const w = 320, h = 140, pad = 28
+  const dates = bio.map(b => new Date(b.data).getTime())
+  const xMin = Math.min(...dates), xMax = Math.max(...dates)
+  const xRange = Math.max(1, xMax - xMin)
+  const xs = bio.map(b => pad + ((new Date(b.data).getTime() - xMin) / xRange) * (w - 2*pad))
+  const buildPath = (key) => {
+    const ys = bio.map(b => b[key])
+    const valid = ys.filter(v => v != null)
+    if (valid.length < 2) return null
+    const yMin = Math.min(...valid), yMax = Math.max(...valid)
+    const yRange = Math.max(0.5, yMax - yMin)
+    let path = ''
+    let started = false
+    bio.forEach((b, i) => {
+      if (b[key] == null) return
+      const y = h - pad - ((b[key] - yMin) / yRange) * (h - 2*pad)
+      path += (started ? 'L' : 'M') + xs[i].toFixed(1) + ' ' + y.toFixed(1) + ' '
+      started = true
+    })
+    return {path, yMin, yMax}
+  }
+  const pesoLine = buildPath('peso')
+  const gordLine = buildPath('gordura_pct')
+
+  return (
+    <ProgSection title="Composição corporal" subtitle={`${bio.length} medições · últimos 90 dias`}>
+      <div style={{display:'flex',gap:8,marginBottom:10}}>
+        <div style={{flex:1,padding:'10px 12px',background:'var(--bg-card)',
+          border:'1.5px solid var(--rule)',borderRadius:'var(--r-md)'}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:'.06em',
+            textTransform:'uppercase',color:'var(--fg-muted)'}}>Peso</div>
+          <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:22,
+            color:'var(--fg)',letterSpacing:'var(--track-tight)'}}>
+            {last.peso ?? '—'}<span style={{fontSize:11,fontWeight:700,marginLeft:2}}>kg</span>
+          </div>
+          {deltaPeso != null && (
+            <div style={{fontSize:11,fontWeight:700,
+              color: deltaPeso < 0 ? 'var(--lime)' : (deltaPeso > 0 ? 'var(--pink)' : 'var(--fg-muted)')}}>
+              {deltaPeso > 0 ? '+' : ''}{deltaPeso}kg em {bio.length} med.
+            </div>
+          )}
+        </div>
+        <div style={{flex:1,padding:'10px 12px',background:'var(--bg-card)',
+          border:'1.5px solid var(--rule)',borderRadius:'var(--r-md)'}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:'.06em',
+            textTransform:'uppercase',color:'var(--fg-muted)'}}>Gordura</div>
+          <div style={{fontFamily:'var(--font-display)',fontWeight:900,fontSize:22,
+            color:'var(--fg)',letterSpacing:'var(--track-tight)'}}>
+            {last.gordura_pct ?? '—'}<span style={{fontSize:11,fontWeight:700,marginLeft:2}}>%</span>
+          </div>
+          {deltaGord != null && (
+            <div style={{fontSize:11,fontWeight:700,
+              color: deltaGord < 0 ? 'var(--lime)' : (deltaGord > 0 ? 'var(--pink)' : 'var(--fg-muted)')}}>
+              {deltaGord > 0 ? '+' : ''}{deltaGord}pp em {bio.length} med.
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{padding:14,background:'var(--bg-card)',
+        border:'1.5px solid var(--rule)',borderRadius:'var(--r-md)'}}>
+        <svg viewBox={`0 0 ${w} ${h}`} style={{width:'100%',height:'auto',display:'block'}}>
+          <line x1={pad} y1={h-pad} x2={w-pad} y2={h-pad} stroke="var(--rule)" strokeWidth={1}/>
+          {pesoLine && <path d={pesoLine.path.trim()} stroke="var(--lime)" strokeWidth={2.5} fill="none" strokeLinecap="round"/>}
+          {gordLine && <path d={gordLine.path.trim()} stroke="var(--pink)" strokeWidth={2.5} fill="none" strokeLinecap="round"/>}
+        </svg>
+        <div style={{display:'flex',gap:14,justifyContent:'center',marginTop:4,
+          fontSize:11,color:'var(--fg-muted)'}}>
+          <span><span style={{display:'inline-block',width:10,height:10,background:'var(--lime)',
+            borderRadius:5,marginRight:4,verticalAlign:'middle'}}/>peso (kg)</span>
+          <span><span style={{display:'inline-block',width:10,height:10,background:'var(--pink)',
+            borderRadius:5,marginRight:4,verticalAlign:'middle'}}/>gordura (%)</span>
+        </div>
+      </div>
+    </ProgSection>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════
 function MainApp({user}) {
@@ -1302,6 +1952,11 @@ function MainApp({user}) {
   const [weight,setWeight]=useState(70)
   const [goal,setGoal]=useState('hipertrofia')
   const [theme, toggleTheme] = useTheme()
+  const [athlete, setAthleteState] = useState(()=> loadAthlete())
+  const switchAthlete = (id) => {
+    setAthleteState(id)
+    saveAthlete(id)
+  }
 
   useEffect(()=>{
     (async ()=>{
@@ -1427,7 +2082,20 @@ function MainApp({user}) {
           <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',
             fontSize:12,color:'var(--fg-muted)',marginTop:4}}>{user.email}</div>
         </div>
-        <div style={{display:'flex',gap:6}}>
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          {/* athlete switch */}
+          <div style={{display:'flex',background:'var(--bg-inset)',borderRadius:'var(--r-pill)',
+            padding:2,border:'1px solid var(--rule)'}}>
+            {ATHLETES.map(a => (
+              <button key={a.id} onClick={()=>switchAthlete(a.id)} style={{
+                padding:'5px 11px',borderRadius:'var(--r-pill)',border:'none',
+                background: athlete === a.id ? 'var(--fg)' : 'transparent',
+                color: athlete === a.id ? 'var(--bg)' : 'var(--fg-muted)',
+                fontSize:11,fontWeight:900,letterSpacing:'.04em',
+                transition:'all .15s var(--ease)',cursor:'pointer',
+              }}>{a.name}</button>
+            ))}
+          </div>
           <button className="btn-icon" onClick={toggleTheme} title={theme==='dark'?'Modo claro':'Modo escuro'}
             style={{fontSize:15}}>
             {theme==='dark' ? '☀' : '☾'}
@@ -1471,6 +2139,34 @@ function MainApp({user}) {
             </div>
           </div>
 
+          {/* export CSV */}
+          <button className="btn-ghost" style={{fontSize:12,marginBottom:8}}
+            onClick={async ()=>{
+              const rows = await DB.allSetsForExport(user.id, athlete)
+              if (!rows.length) { alert('Sem séries registradas pra exportar.'); return }
+              const header = ['data','atleta','exercicio','serie','kg','reps','sessao']
+              const escape = v => {
+                if (v == null) return ''
+                const s = String(v)
+                return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+              }
+              const csv = [header.join(',')].concat(
+                rows.map(r => [
+                  r.completed_at, r.athlete, r.exercise_name,
+                  r.set_number, r.weight_kg, r.reps, r.session_id
+                ].map(escape).join(','))
+              ).join('\n')
+              const blob = new Blob([csv], {type:'text/csv;charset=utf-8'})
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `gym-tracker-${athlete}-${new Date().toISOString().slice(0,10)}.csv`
+              document.body.appendChild(a); a.click()
+              setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url) }, 500)
+            }}>
+            Exportar histórico (CSV)
+          </button>
+
           <button className="btn-ghost" style={{fontSize:12,color:'#DC2626',borderColor:'#FCA5A5'}}
             onClick={()=>sb.auth.signOut()}
             onMouseEnter={e=>{e.currentTarget.style.background='#FEF2F2';e.currentTarget.style.color='#DC2626'}}
@@ -1482,7 +2178,7 @@ function MainApp({user}) {
 
       {/* ── Tab bar ── */}
       <div style={{margin:'14px 18px 0'}} className="tab-bar">
-        {[['plans','Treinos'],['library','Exercícios'],['history','Histórico']].map(([t,l])=>(
+        {[['plans','Treinos'],['library','Exercícios'],['progress','Progresso'],['history','Histórico']].map(([t,l])=>(
           <button key={t} className={`tab-btn${tab===t?' active':''}`} onClick={()=>setTab(t)}>{l}</button>
         ))}
       </div>
@@ -1492,10 +2188,16 @@ function MainApp({user}) {
 
         {/* PLANS */}
         {tab==='plans' && <>
-          <div style={{marginBottom:16}}>
+          <div style={{marginBottom:16,display:'flex',flexDirection:'column',gap:8}}>
             <button className="btn-primary" onClick={()=>{setEditing(null);setModal(true)}}
               style={{fontSize:12}}>
               + Criar novo treino
+            </button>
+            <button className="btn-ghost" onClick={()=>{
+              const today = new Date().toLocaleDateString('pt-BR')
+              startWorkout({id:null, name:`Treino livre — ${today}`, exercises:[]})
+            }} style={{fontSize:12}}>
+              + Treino livre
             </button>
           </div>
           {plans.length===0 && (
@@ -1534,13 +2236,16 @@ function MainApp({user}) {
           </div>
         </>}
 
+        {/* PROGRESS */}
+        {tab==='progress' && <ProgressTab uid={user.id} athlete={athlete}/>}
+
         {/* HISTORY */}
-        {tab==='history' && <History uid={user.id}/>}
+        {tab==='history' && <History uid={user.id} athlete={athlete}/>}
       </div>
 
       {/* ── Modals ── */}
       {modal && <PlanModal editing={editing} onSave={savePlan} onClose={()=>{setModal(false);setEditing(null)}}/>}
-      {workout && <WorkoutPlayer plan={workout} user={user} resume={resumeData} onClose={closeWorkout}/>}
+      {workout && <WorkoutPlayer plan={workout} user={user} athlete={athlete} resume={resumeData} onClose={closeWorkout}/>}
 
       {/* ── Prompt de retomada de treino interrompido ── */}
       {pendingWorkout && !workout && (

@@ -599,25 +599,55 @@ const MChip = ({mKey, small=false})=>{
 // AUTH SCREEN
 // ═══════════════════════════════════════════════════════════
 function AuthScreen() {
+  const [mode,setMode]=useState('login')   // 'login' | 'signup'
   const [email,setEmail]=useState('')
+  const [password,setPassword]=useState('')
   const [busy,setBusy]=useState(false)
-  const [sent,setSent]=useState(false)
   const [err,setErr]=useState('')
+  const [info,setInfo]=useState('')
 
-  const send = async ()=>{
-    if(!email.trim()) return
-    setBusy(true); setErr('')
-    const {error} = await sb.auth.signInWithOtp({email:email.trim(),options:{emailRedirectTo:location.origin}})
-    if(error) setErr(error.message)
-    else setSent(true)
+  const submit = async ()=>{
+    if(!email.trim() || !password) return
+    if (mode === 'signup' && password.length < 6) {
+      setErr('Senha precisa de pelo menos 6 caracteres.'); return
+    }
+    setBusy(true); setErr(''); setInfo('')
+    try {
+      if (mode === 'signup') {
+        const {data, error} = await sb.auth.signUp({
+          email: email.trim(), password
+        })
+        if (error) {
+          setErr(error.message)
+        } else if (!data.session) {
+          // Email confirmation está habilitado no Supabase — avisa.
+          setInfo('Conta criada. Confirme o e-mail enviado pra entrar (ou desligue "Confirm email" no Supabase Studio se quiser entrar direto).')
+        }
+      } else {
+        const {error} = await sb.auth.signInWithPassword({
+          email: email.trim(), password
+        })
+        if (error) setErr(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos.' : error.message)
+      }
+    } catch(e) {
+      setErr(e.message || 'Erro inesperado')
+    }
     setBusy(false)
+  }
+
+  const isSignup = mode === 'signup'
+  const inputBaseStyle = {
+    width:'100%',padding:'14px 16px',fontSize:16,
+    background:'rgba(255,252,244,0.07)',fontFamily:'var(--font-body)',
+    border:'1.5px solid rgba(255,252,244,0.15)',borderRadius:'var(--r-md)',
+    color:'var(--off-white)',marginBottom:12,outline:'none'
   }
 
   return (
     <div style={{minHeight:'100vh',background:'var(--black)',display:'flex',flexDirection:'column',
                  alignItems:'center',justifyContent:'center',padding:'32px 24px'}}>
       {/* Logo block */}
-      <div style={{textAlign:'center',marginBottom:48}}>
+      <div style={{textAlign:'center',marginBottom:40}}>
         <div style={{
           width:72,height:72,borderRadius:'var(--r-lg)',
           background:'var(--lime)',
@@ -631,50 +661,66 @@ function AuthScreen() {
           GYM<br/>TRACKER
         </div>
         <div style={{fontFamily:'var(--font-italic)',fontStyle:'italic',fontSize:16,
-          color:'var(--black-60)',marginTop:10,color:'rgba(255,252,244,0.55)'}}>
+          color:'rgba(255,252,244,0.55)',marginTop:10}}>
           seus treinos, seu ritmo
         </div>
       </div>
 
-      {sent ? (
-        <div style={{width:'100%',maxWidth:360,textAlign:'center'}}>
-          <div style={{width:64,height:64,borderRadius:'var(--r-lg)',background:'var(--lime)',
-            display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:28}}>📬</div>
-          <div style={{fontSize:20,fontWeight:900,color:'var(--off-white)',marginBottom:8}}>Verifique seu e-mail</div>
-          <div style={{fontSize:14,color:'rgba(255,252,244,0.60)',lineHeight:1.7,marginBottom:20}}>
-            Link enviado para <strong style={{color:'var(--lime)'}}>{email}</strong>.<br/>Clique no link para entrar.
-          </div>
-          <button onClick={()=>{setSent(false);setEmail('')}}
-            style={{fontSize:13,color:'rgba(255,252,244,0.50)',textDecoration:'underline'}}>
-            Usar outro e-mail
-          </button>
+      <div style={{width:'100%',maxWidth:360}}>
+        {/* tabs login/cadastro */}
+        <div style={{display:'flex',gap:4,padding:3,marginBottom:18,
+          background:'rgba(255,252,244,0.05)',borderRadius:'var(--r-pill)'}}>
+          {[['login','Entrar'],['signup','Cadastrar']].map(([k,l])=>(
+            <button key={k} onClick={()=>{setMode(k);setErr('');setInfo('')}}
+              style={{
+                flex:1,padding:'9px 12px',borderRadius:'var(--r-pill)',border:'none',
+                background: mode === k ? 'var(--lime)' : 'transparent',
+                color: mode === k ? 'var(--black)' : 'rgba(255,252,244,0.55)',
+                fontSize:12,fontWeight:900,letterSpacing:'.04em',textTransform:'uppercase',
+                transition:'all .15s var(--ease)',cursor:'pointer',
+              }}>{l}</button>
+          ))}
         </div>
-      ) : (
-        <div style={{width:'100%',maxWidth:360}}>
-          <label style={{fontSize:12,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',
-            color:'rgba(255,252,244,0.50)',display:'block',marginBottom:8}}>
-            Seu e-mail
-          </label>
-          <input type="email" placeholder="nome@exemplo.com" value={email}
-            onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()}
-            style={{width:'100%',padding:'14px 16px',fontSize:16,
-                    background:'rgba(255,252,244,0.07)',fontFamily:'var(--font-body)',
-                    border:'1.5px solid rgba(255,252,244,0.15)',borderRadius:'var(--r-md)',
-                    color:'var(--off-white)',marginBottom:12,outline:'none'}}
-            onFocus={e=>e.target.style.borderColor='var(--lime)'}
-            onBlur={e=>e.target.style.borderColor='rgba(255,252,244,0.15)'}
-          />
-          {err && <div style={{padding:'10px 14px',background:'rgba(220,38,38,0.15)',border:'1px solid rgba(220,38,38,0.4)',
-            borderRadius:'var(--r-sm)',color:'#FCA5A5',fontSize:13,fontWeight:600,marginBottom:12}}>{err}</div>}
-          <button className="btn-primary btn-lime" onClick={send} disabled={busy||!email.trim()}
-            style={{fontSize:13}}>
-            {busy ? <Spinner sz={18} c="var(--black)"/> : '→ Enviar link de acesso'}
-          </button>
-          <div style={{textAlign:'center',marginTop:14,fontSize:12,color:'rgba(255,252,244,0.35)'}}>
-            Sem senha — link seguro por e-mail.
-          </div>
+
+        <label style={{fontSize:12,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',
+          color:'rgba(255,252,244,0.50)',display:'block',marginBottom:8}}>
+          E-mail
+        </label>
+        <input type="email" placeholder="nome@exemplo.com" value={email}
+          onChange={e=>setEmail(e.target.value)} autoComplete="email"
+          style={inputBaseStyle}
+          onFocus={e=>e.target.style.borderColor='var(--lime)'}
+          onBlur={e=>e.target.style.borderColor='rgba(255,252,244,0.15)'}
+        />
+
+        <label style={{fontSize:12,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',
+          color:'rgba(255,252,244,0.50)',display:'block',marginBottom:8}}>
+          Senha {isSignup && <span style={{textTransform:'none',letterSpacing:0,fontWeight:400,
+            color:'rgba(255,252,244,0.35)'}}>· mín. 6 caracteres</span>}
+        </label>
+        <input type="password" placeholder="••••••••" value={password}
+          onChange={e=>setPassword(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&submit()}
+          autoComplete={isSignup ? 'new-password' : 'current-password'}
+          style={inputBaseStyle}
+          onFocus={e=>e.target.style.borderColor='var(--lime)'}
+          onBlur={e=>e.target.style.borderColor='rgba(255,252,244,0.15)'}
+        />
+
+        {err && <div style={{padding:'10px 14px',background:'rgba(220,38,38,0.15)',border:'1px solid rgba(220,38,38,0.4)',
+          borderRadius:'var(--r-sm)',color:'#FCA5A5',fontSize:13,fontWeight:600,marginBottom:12}}>{err}</div>}
+        {info && <div style={{padding:'10px 14px',background:'rgba(212,255,61,0.10)',border:'1px solid rgba(212,255,61,0.30)',
+          borderRadius:'var(--r-sm)',color:'rgba(212,255,61,0.90)',fontSize:13,fontWeight:600,marginBottom:12}}>{info}</div>}
+
+        <button className="btn-primary btn-lime" onClick={submit} disabled={busy||!email.trim()||!password}
+          style={{fontSize:13}}>
+          {busy ? <Spinner sz={18} c="var(--black)"/> : (isSignup ? '→ Criar conta' : '→ Entrar')}
+        </button>
+
+        <div style={{textAlign:'center',marginTop:14,fontSize:12,color:'rgba(255,252,244,0.35)'}}>
+          {isSignup ? 'Cadastra a primeira vez. Depois é só entrar.' : 'Acessa com e-mail e senha.'}
         </div>
-      )}
+      </div>
     </div>
   )
 }

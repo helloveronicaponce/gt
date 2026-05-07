@@ -1076,7 +1076,7 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
       if (nextUndone) setTimeout(() => setActiveKey(nextUndone.key), 350)
     }
     if (willBeDone) {
-      setRestEnd(Date.now() + 90 * 1000)
+      setRestEnd(Date.now() + 50 * 1000)
       if (sidRef.current && it && s) {
         DB.saveSet(sidRef.current, user.id, athlete, it.exId, it.ex?.name || '', setN, s.kg, s.reps, null).catch(()=>{})
       }

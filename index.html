@@ -952,6 +952,7 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
   const [addSheet,setAddSheet] = useState(false)
   const [restEnd, setRestEnd] = useState(null)         // timestamp do fim do descanso
   const [suggestions, setSuggestions] = useState({})   // { exId: {weight_kg, reps} }
+  const [activeKey, setActiveKey] = useState(()=> items[0]?.key ?? null) // accordion: exercício aberto
   const startRef = useRef(resume?.startedAt || Date.now())
   const sidRef   = useRef(resume?.sessionId || null)
 
@@ -1051,10 +1052,13 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
 
   // Marca/desmarca uma série como concluída.
   // Quando vira done=true: dispara cronômetro de 90s e persiste no Supabase.
+  // Quando TODAS as séries de um exercício ficam done, auto-avança para o próximo.
   const toggleSet = (itemKey, setN) => {
     const it = items.find(i => i.key === itemKey)
     const s  = it?.setsLog.find(x => x.n === setN)
     const willBeDone = s && !s.done
+    // Verifica se marcar esta série vai completar o exercício inteiro
+    const wouldCompleteEx = willBeDone && it.setsLog.every(x => x.n === setN ? true : x.done)
     setItems(prev => prev.map(item => {
       if (item.key !== itemKey) return item
       return {
@@ -1062,6 +1066,11 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
         setsLog: item.setsLog.map(x => x.n === setN ? {...x, done: !x.done} : x)
       }
     }))
+    if (wouldCompleteEx) {
+      // Avança para o próximo exercício não concluído após breve delay (feedback visual)
+      const nextUndone = items.find(i => i.key !== itemKey && !i.setsLog.every(s => s.done))
+      if (nextUndone) setTimeout(() => setActiveKey(nextUndone.key), 350)
+    }
     if (willBeDone) {
       setRestEnd(Date.now() + 90 * 1000)
       if (sidRef.current && it && s) {
@@ -1179,12 +1188,17 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
             <div key={e.key} style={{
               background: isDone ? 'var(--fg)' : 'var(--bg-card)',
               borderRadius:'var(--r-lg)',overflow:'hidden',
-              border:`1.5px solid ${isDone?'var(--fg)':'var(--rule)'}`,
-              boxShadow: isDone ? 'none' : 'var(--shadow-card)',
+              border:`1.5px solid ${isDone?'var(--fg)': activeKey===e.key ? 'var(--lime)' : 'var(--rule)'}`,
+              boxShadow: isDone ? 'none' : activeKey===e.key ? '0 0 0 3px rgba(212,255,61,0.15)' : 'var(--shadow-card)',
               transition:'all .2s var(--ease)',
             }}>
-              {/* header */}
-              <div style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',gap:12}}>
+              {/* header — toque abre/fecha as séries */}
+              <div
+                onClick={() => !isDone && setActiveKey(activeKey === e.key ? null : e.key)}
+                style={{padding:'12px 14px 8px',display:'flex',alignItems:'center',gap:12,
+                  cursor: isDone ? 'default' : 'pointer', userSelect:'none',
+                  WebkitTapHighlightColor:'transparent',
+                }}>
                 <div style={{
                   width:20,height:20,borderRadius:10,flexShrink:0,
                   display:'flex',alignItems:'center',justifyContent:'center',
@@ -1222,9 +1236,18 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
                     )}
                   </div>
                 </div>
+                {/* chevron */}
+                {!isDone && (
+                  <div style={{
+                    fontSize:16, color: activeKey===e.key ? 'var(--lime)' : 'var(--fg-muted)',
+                    flexShrink:0, lineHeight:1,
+                    transform: activeKey===e.key ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition:'transform .2s var(--ease), color .2s',
+                  }}>▾</div>
+                )}
               </div>
-              {/* sets table */}
-              {!isDone && (
+              {/* sets table — só aparece no exercício ativo (accordion) */}
+              {!isDone && activeKey===e.key && (
                 <div style={{padding:'4px 14px 12px',display:'flex',flexDirection:'column',gap:6}}>
                   {e.setsLog.map(s => (
                     <div key={s.n} style={{

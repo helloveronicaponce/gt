@@ -939,7 +939,11 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
         .map(it => ({
           ...it,
           ex: EX.find(x=>x.id===it.exId),
-          setsLog: (it.setsLog && it.setsLog.length) ? it.setsLog : initSetsLog(it.sets)
+          // Garante que setsLog sempre tem o número correto de séries do plano.
+      // Dados antigos de localStorage podem ter contagem diferente — recria nesse caso.
+      setsLog: (it.setsLog && it.setsLog.length && it.setsLog.length === Math.max(1, Math.floor(+it.sets)||1))
+        ? it.setsLog
+        : initSetsLog(it.sets)
         }))
         .filter(it => it.ex)
     }
@@ -1187,7 +1191,7 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
           return (
             <div key={e.key} style={{
               background: isDone ? 'var(--fg)' : 'var(--bg-card)',
-              borderRadius:'var(--r-lg)',overflow:'hidden',
+              borderRadius:'var(--r-lg)',
               border:`1.5px solid ${isDone?'var(--fg)': activeKey===e.key ? 'var(--lime)' : 'var(--rule)'}`,
               boxShadow: isDone ? 'none' : activeKey===e.key ? '0 0 0 3px rgba(212,255,61,0.15)' : 'var(--shadow-card)',
               transition:'all .2s var(--ease)',
@@ -1225,7 +1229,7 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
                     <span style={{fontSize:11,fontWeight:900,
                       color:isDone?'rgba(255,252,244,0.35)':'var(--fg-muted)',
                       letterSpacing:'.04em',textTransform:'uppercase'}}>
-                      {e.setsLog.length}×{e.reps}
+                      {e.sets}×{e.reps}
                     </span>
                     <MChip mKey={e.ex.m} small/>
                     {sug && !isDone && (

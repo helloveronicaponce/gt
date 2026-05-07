@@ -1,6 +1,6 @@
 // Service Worker — Gym Tracker PWA
 // Usa caminhos relativos ao scope do SW (funciona em GitHub Pages em subpasta).
-const CACHE = 'gym-v12'
+const CACHE = 'gym-v13'
 const ASSETS = [
   './',
   './index.html',
@@ -39,6 +39,22 @@ self.addEventListener('fetch', e => {
   // Só trata GET
   if (e.request.method !== 'GET') return
 
+  // index.html e navegação SPA: network-first — garante sempre a versão mais nova.
+  // Cai no cache só se estiver offline.
+  if (e.request.mode === 'navigate' || url.pathname.endsWith('index.html') || url.pathname.endsWith('/')) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res && res.status === 200) {
+          const clone = res.clone()
+          caches.open(CACHE).then(c => c.put(e.request, clone))
+        }
+        return res
+      }).catch(() => caches.match('./index.html'))
+    )
+    return
+  }
+
+  // Demais assets estáticos: cache-first
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached
@@ -48,10 +64,7 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, clone))
         }
         return res
-      }).catch(() => {
-        // fallback offline: devolve o index.html (SPA shell)
-        if (e.request.mode === 'navigate') return caches.match('./index.html')
-      })
+      }).catch(() => null)
     })
   )
 })

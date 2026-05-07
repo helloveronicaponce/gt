@@ -100,7 +100,7 @@
     html.dark {
       --bg:          #0F0F0F;
       --bg-card:     #1C1C1C;
-      --bg-inset:    rgba(255,252,244,0.06);
+      --bg-inset:    rgba(255,252,244,0.10);
       --fg:          #FFFCF4;
       --fg-muted:    rgba(255,252,244,0.45);
       --rule:        rgba(255,252,244,0.10);
@@ -114,7 +114,7 @@
       html:not(.light) {
         --bg:          #0F0F0F;
         --bg-card:     #1C1C1C;
-        --bg-inset:    rgba(255,252,244,0.06);
+        --bg-inset:    rgba(255,252,244,0.10);
         --fg:          #FFFCF4;
         --fg-muted:    rgba(255,252,244,0.45);
         --rule:        rgba(255,252,244,0.10);
@@ -925,9 +925,11 @@ function RestCountdown({end}) {
 // ═══════════════════════════════════════════════════════════
 function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
   // Inicializa o array de séries de um exercício (n entradas vazias).
-  const initSetsLog = (n) => Array.from({length: n||1}, (_,i)=>(
-    {n:i+1, kg:null, reps:null, done:false}
-  ))
+  // +n converte string→número; Math.floor garante inteiro; ||1 cobre NaN/0/undefined.
+  const initSetsLog = (n) => {
+    const count = Math.max(1, Math.floor(+n) || 1)
+    return Array.from({length: count}, (_,i)=>({n:i+1, kg:null, reps:null, done:false}))
+  }
 
   // Cada item do treino agora carrega seu próprio setsLog — array de séries
   // com kg/reps/done individuais. Substitui o checkbox único do exercício.
@@ -1167,7 +1169,7 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
       </div>
 
       {/* ── exercise list ── */}
-      <div style={{flex:1,overflowY:'auto',padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
+      <div style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
         {items.map((e,i)=>{
           const isDone = doneSet.has(e.key)
           const m = M[e.ex.m]
@@ -1228,7 +1230,8 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
                     <div key={s.n} style={{
                       display:'flex',alignItems:'center',gap:8,
                       padding:'6px 8px',
-                      background: s.done ? 'rgba(212,255,61,0.18)' : 'var(--bg-inset)',
+                      background: s.done ? 'rgba(212,255,61,0.18)' : 'var(--bg-card)',
+                      border: `1.5px solid ${s.done ? 'rgba(212,255,61,0.35)' : 'var(--rule-strong)'}`,
                       borderRadius:'var(--r-sm)',
                       transition:'background .2s var(--ease)',
                     }}>
@@ -1242,7 +1245,7 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
                         placeholder="kg"
                         style={{
                           flex:1,minWidth:0,padding:'8px 10px',borderRadius:'var(--r-sm)',
-                          border:'1.5px solid var(--rule)',background:'var(--bg)',
+                          border:'1.5px solid var(--rule-strong)',background:'var(--bg-inset)',
                           fontSize:14,fontWeight:700,color:'var(--fg)',textAlign:'center',
                         }}/>
                       <span style={{fontSize:11,color:'var(--fg-muted)',fontWeight:700}}>×</span>
@@ -1252,15 +1255,15 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
                         placeholder={String(e.reps)}
                         style={{
                           width:60,padding:'8px 10px',borderRadius:'var(--r-sm)',
-                          border:'1.5px solid var(--rule)',background:'var(--bg)',
+                          border:'1.5px solid var(--rule-strong)',background:'var(--bg-inset)',
                           fontSize:14,fontWeight:700,color:'var(--fg)',textAlign:'center',
                         }}/>
                       <button onClick={()=>toggleSet(e.key, s.n)} style={{
-                        flexShrink:0,width:36,height:36,borderRadius:'var(--r-sm)',
+                        flexShrink:0,width:40,height:40,borderRadius:'var(--r-sm)',
                         background: s.done ? 'var(--lime)' : 'var(--fg)',
                         color: s.done ? 'var(--black)' : 'var(--bg)',
-                        border:'none',fontWeight:900,fontSize:14,
-                        transition:'background .15s var(--ease)',
+                        border:'none',fontWeight:900,fontSize:16,
+                        transition:'background .15s var(--ease)',cursor:'pointer',
                       }}>
                         {s.done ? '✓' : '○'}
                       </button>

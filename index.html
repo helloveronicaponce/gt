@@ -1169,7 +1169,7 @@ function WorkoutPlayer({plan, user, athlete, onClose, resume}) {
       </div>
 
       {/* ── exercise list ── */}
-      <div style={{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
+      <div style={{flex:1,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',touchAction:'pan-y',padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
         {items.map((e,i)=>{
           const isDone = doneSet.has(e.key)
           const m = M[e.ex.m]
